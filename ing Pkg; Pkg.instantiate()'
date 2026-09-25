@@ -1,0 +1,2583 @@
+* Unmerged path CONTRIBUTING.md
+* Unmerged path LICENSE.md
+* Unmerged path Manifest.toml
+* Unmerged path Project.toml
+* Unmerged path README.md
+* Unmerged path course_progress.toml
+* Unmerged path exercises/F01_first_pull_request/learning_log.md
+* Unmerged path exercises/F01_first_pull_request/run.jl
+* Unmerged path exercises/F01_first_pull_request/tests.jl
+* Unmerged path exercises/F02_julia_arrays_and_tests/tests.jl
+* Unmerged path exercises/F03-F04_vector_calculus/F03.jl
+* Unmerged path exercises/F03-F04_vector_calculus/learning_log.md
+* Unmerged path exercises/F03-F04_vector_calculus/run.jl
+* Unmerged path exercises/F03-F04_vector_calculus/tests.jl
+[1mdiff --git a/exercises/N02_nonlinear_advection/learning_log.md b/exercises/N02_nonlinear_advection/learning_log.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..e1995bf[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N02_nonlinear_advection/learning_log.md[m
+[36m@@ -0,0 +1,43 @@[m
+[32m+[m[32m# N02 学習ログ[m
+[32m+[m
+[32m+[m[32m## 予想と式・コード[m
+[32m+[m
+[32m+[m[32m- N01の一定速度移流との違い、左側の広がりと右側の急峻化の予想：[m
+[32m+[m[32m- 保存形の流束差分と非保存形の差、式・配列・添字の対応：[m
+[32m+[m[32m- 固定／周期の格子、周期添字、境界、バッファ交換の説明：[m
+[32m+[m
+[32m+[m[32m## 結果と解釈[m
+[32m+[m
+[32m+[m[32m- nx、dx、steps、dt、指定CFLと実効最大CFL：[m
+[32m+[m[32m- 初期・最終極値、オーバーシュート・アンダーシュート：[m
+[32m+[m[32m- 周期の初期総和・最終総和・符号付き変化量：[m
+[32m+[m[32m- N01との比較に用いた判定量・判定条件と根拠：[m
+[32m+[m[32m- 図：[固定境界](results/fixed-boundary.png)、[周期境界](results/periodic.png)[m
+[32m+[m[32m- 数値記録：[summary.toml](results/summary.toml)[m
+[32m+[m[32m- 予想との比較、解釈、限界：[m
+[32m+[m
+[32m+[m[32m## 必須4群と自作2つのテスト[m
+[32m+[m
+[32m+[m[32m- 配布された必須テストの入力・期待値・判断条件を確認し，その意味を説明：[m
+[32m+[m[32m- 自作1（周期総和保存）：入力、ステップ数、期待値、許容誤差とその根拠：[m
+[32m+[m[32m- 自作1で検出できる誤り／できない誤り：[m
+[32m+[m[32m- 自作2（循環移動と更新の整合）：非対称な入力、移動量、同じdt・dx、期待値、許容誤差とその根拠：[m
+[32m+[m[32m- 自作2で検出できる誤り／できない誤り：[m
+[32m+[m[32m- 実行コマンドと結果：[m
+[32m+[m
+[32m+[m[32m## AI利用・出典[m
+[32m+[m
+[32m+[m[32m- 依頼内容（利用なしの場合は「利用なし」）：[m
+[32m+[m[32m- 重要な提案：[m
+[32m+[m[32m- 採用・修正・却下と理由：[m
+[32m+[m[32m- 採用素材の出典、変更点、利用条件（なければ「なし」）：[m
+[32m+[m
+[32m+[m
+[32m+[m[32m## 理解度チェック・LETUS提出[m
+[32m+[m
+[32m+[m[32m- 対応する授業ID：[m
+[32m+[m[32m- LETUS提出日：[m
+[32m+[m[32m- 提出済み確認：[m
+[32m+[m[32m- 理解できた点：[m
+[32m+[m[32m- 残った疑問：[m
+[32m+[m[32m- 対話全文はLETUSへ提出し，このリポジトリには含めていない：[m
+[1mdiff --git a/exercises/N02_nonlinear_advection/provided_support.jl b/exercises/N02_nonlinear_advection/provided_support.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..8f70fce[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N02_nonlinear_advection/provided_support.jl[m
+[36m@@ -0,0 +1,76 @@[m
+[32m+[m[32m# 入力検証・描画・保存を担当する提供ファイル。学生の編集対象ではありません。[m
+[32m+[m[32musing Plots[m
+[32m+[m[32musing TOML[m
+[32m+[m[32mconst DEFAULT_OUTPUT_DIR = joinpath(@__DIR__, "results")[m
+[32m+[m
+[32m+[m[32mfunction validate_boundary(boundary)[m
+[32m+[m[32m    boundary in (:fixed, :periodic) || throw(ArgumentError("boundaryは:fixedまたは:periodicです"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_simulation_inputs(boundary, nx, cfl, t_final)[m
+[32m+[m[32m    validate_boundary(boundary)[m
+[32m+[m[32m    !(nx isa Bool) && nx >= 3 || throw(ArgumentError("nxは3以上の整数です（Bool不可）"))[m
+[32m+[m[32m    isfinite(cfl) && cfl > 0 || throw(ArgumentError("cflは有限な正の値です"))[m
+[32m+[m[32m    isfinite(t_final) && t_final > 0 || throw(ArgumentError("t_finalは有限な正の値です"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_step_inputs(u_new, u_old, dt, dx, boundary)[m
+[32m+[m[32m    validate_boundary(boundary)[m
+[32m+[m[32m    all(u -> u isa AbstractVector{<:AbstractFloat}, (u_new,u_old)) ||[m
+[32m+[m[32m        throw(ArgumentError("新旧バッファは浮動小数の一次元配列です"))[m
+[32m+[m[32m    Base.require_one_based_indexing(u_new,u_old)[m
+[32m+[m[32m    length(u_new) == length(u_old) >= 3 || throw(ArgumentError("新旧は同長で3点以上必要です"))[m
+[32m+[m[32m    Base.mightalias(u_new,u_old) && throw(ArgumentError("新旧バッファが重なっています"))[m
+[32m+[m[32m    all(isfinite,u_old) || throw(ArgumentError("旧配列は有限値にしてください"))[m
+[32m+[m[32m    all(v -> isfinite(v) && v > 0, (dt,dx)) || throw(ArgumentError("dtとdxは有限な正の値です"))[m
+[32m+[m[32m    # CFL超過や不安定化による負値でも，同じ後退差分を続けて破綻を観察する。[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction summary_section(result; periodic=false)[m
+[32m+[m[32m    section = Dict{String,Any}("nx"=>length(result.x))[m
+[32m+[m[32m    for key in (:dx,:steps,:dt,:max_cfl,:initial_minimum,:initial_maximum,:minimum,:maximum,:overshoot,:undershoot)[m
+[32m+[m[32m        section[string(key)] = getproperty(result,key)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    if periodic[m
+[32m+[m[32m        for key in (:initial_sum,:final_sum,:sum_change)[m
+[32m+[m[32m            section[string(key)] = getproperty(result,key)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    all(isfinite,values(section)) || error("非有限な診断量は保存できません")[m
+[32m+[m[32m    section[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction solution_plot(r; periodic=false)[m
+[32m+[m[32m    label = periodic ? "Periodic boundary" : "Fixed boundary"[m
+[32m+[m[32m    # 周期の末尾へ表示用の点だけ追加する。診断の配列には混ぜない。[m
+[32m+[m[32m    x = periodic ? vcat(r.x,2.0) : r.x[m
+[32m+[m[32m    initial = periodic ? vcat(r.u0,r.u0[1]) : r.u0[m
+[32m+[m[32m    final = periodic ? vcat(r.u,r.u[1]) : r.u[m
+[32m+[m[32m    low = min(minimum(r.u0),minimum(r.u))[m
+[32m+[m[32m    high = max(maximum(r.u0),maximum(r.u))[m
+[32m+[m[32m    padding = 0.05 * (high-low)[m
+[32m+[m[32m    limits = (min(0.9,low-padding),max(2.1,high+padding))[m
+[32m+[m[32m    p = plot(x,initial;label="Initial",linewidth=2,xlabel="x",ylabel="u",[m
+[32m+[m[32m        title="$label, t = $(r.t_final)",size=(800,500),ylims=limits)[m
+[32m+[m[32m    plot!(p,x,final;label="Final",linewidth=2)[m
+[32m+[m[32m    return p[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction make_plots(output_dir, fixed, periodic)[m
+[32m+[m[32m    for (r,name,isperiodic) in ((fixed,"fixed-boundary.png",false),(periodic,"periodic.png",true))[m
+[32m+[m[32m        savefig(solution_plot(r;periodic=isperiodic),joinpath(output_dir,name))[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_outputs(output_dir, fixed, periodic, cfl, t_final)[m
+[32m+[m[32m    summary = Dict("course_id"=>"N02", "domain"=>[0.0,2.0], "requested_cfl"=>cfl,[m
+[32m+[m[32m        "t_final"=>t_final,"fixed"=>summary_section(fixed),"periodic"=>summary_section(periodic;periodic=true))[m
+[32m+[m[32m    # 全ファイルを一時領域で生成してから正式パスへ移す。生成失敗なら既存結果を保持。[m
+[32m+[m[32m    mktempdir() do temporary[m
+[32m+[m[32m        open(joinpath(temporary,"summary.toml"),"w") do io[m
+[32m+[m[32m            TOML.print(io,summary;sorted=true)[m
+[32m+[m[32m        end[m
+[32m+[m[32m        make_plots(temporary,fixed,periodic)[m
+[32m+[m[32m        names = ("fixed-boundary.png","periodic.png","summary.toml")[m
+[32m+[m[32m        sizes = [filesize(joinpath(temporary,n)) for n in names][m
+[32m+[m[32m        maximum(sizes) <= 5*1024^2 && sum(sizes) <= 10*1024^2 || error("N02出力サイズの上限を超えています")[m
+[32m+[m[32m        mkpath(output_dir)[m
+[32m+[m[32m        for name in names[m
+[32m+[m[32m            cp(joinpath(temporary,name),joinpath(output_dir,name);force=true)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N02_nonlinear_advection/run.jl b/exercises/N02_nonlinear_advection/run.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..d2ca016[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N02_nonlinear_advection/run.jl[m
+[36m@@ -0,0 +1,92 @@[m
+[32m+[m[32m# N02: 流束、周期左隣添字、流束差分のTODO 3か所を実装する。[m
+[32m+[m[32m# 読む順: 流束 → 添字 → 1ステップ → 境界 → simulate → main。[m
+[32m+[m[32mmodule N02NonlinearAdvection[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32mexport burgers_flux, periodic_left_index, nonlinear_upwind_step!, apply_boundary!, simulate, main[m
+[32m+[m
+[32m+[m[32m"""有限なスカラーのBurgers流束。流束自体は負の値にも定義される。"""[m
+[32m+[m[32mfunction burgers_flux(u::Real)[m
+[32m+[m[32m    isfinite(u) || throw(ArgumentError("流束の入力を有限値にしてください"))[m
+[32m+[m[32m    # TODO(N02): 保存形Burgers方程式の流束を返す。[m
+[32m+[m[32m    error("未実装 N02: burgers_fluxを実装してください")[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""1始まりの周期配列で左隣の添字を返す。"""[m
+[32m+[m[32mfunction periodic_left_index(i::Integer, n::Integer)[m
+[32m+[m[32m    (i isa Bool || n isa Bool || n < 1 || !(1 <= i <= n)) &&[m
+[32m+[m[32m        throw(ArgumentError("添字は1 <= i <= n、点数はn >= 1の整数です（Bool不可）"))[m
+[32m+[m[32m    # TODO(N02): 先頭の左隣が末尾になるようにする。[m
+[32m+[m[32m    error("未実装 N02: periodic_left_indexを実装してください")[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""旧配列だけを読み、流束後退差分と陽Eulerで新配列へ書く。[m
+[32m+[m[32m固定境界では端点を保持し、周期境界では全点を更新する。[m
+[32m+[m[32m新旧は独立した同長3点以上の浮動小数配列。境界適用は呼出し側で行う。[m
+[32m+[m[32m"""[m
+[32m+[m[32mfunction nonlinear_upwind_step!(u_new, u_old, dt::Real, dx::Real; boundary=:fixed)[m
+[32m+[m[32m    validate_step_inputs(u_new, u_old, dt, dx, boundary)[m
+[32m+[m[32m    copyto!(u_new, u_old)[m
+[32m+[m[32m    indices = boundary == :periodic ? (1:length(u_old)) : (2:length(u_old)-1)[m
+[32m+[m[32m    for i in indices[m
+[32m+[m[32m        left = boundary == :periodic ? periodic_left_index(i, length(u_old)) : i - 1[m
+[32m+[m[32m        # TODO(N02): 古い値の流束の差で更新する。u_oldは変更しない。[m
+[32m+[m[32m        error("未実装 N02: nonlinear_upwind_step!の更新式を実装してください")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    all(isfinite, u_new) || error("更新後に非有限値があります。更新式を確認してください")[m
+[32m+[m[32m    return u_new[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""固定は左1・右隣接点コピー、周期は配列を変更しない。"""[m
+[32m+[m[32mfunction apply_boundary!(u; boundary=:fixed)[m
+[32m+[m[32m    validate_boundary(boundary)[m
+[32m+[m[32m    length(u) >= 3 || throw(ArgumentError("境界配列には3点以上が必要です"))[m
+[32m+[m[32m    if boundary == :fixed[m
+[32m+[m[32m        u[1] = 1.0[m
+[32m+[m[32m        u[end] = u[end-1][m
+[32m+[m[32m    end[m
+[32m+[m[32m    return u[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""独立したx,u0,uと格子・時間刻み・初期/最終診断を返す。[m
+[32m+[m[32m周期公式条件はnx=80を明示する。初期最大速度から刻みを定め、最終時刻に合わせる。[m
+[32m+[m[32mCFL超過でも計算を続ける。発散して非有限値になった場合は停止する。[m
+[32m+[m[32m"""[m
+[32m+[m[32mfunction simulate(; boundary=:fixed, nx::Integer=81, cfl::Real=0.5, t_final::Real=1.0)[m
+[32m+[m[32m    validate_simulation_inputs(boundary, nx, cfl, t_final)[m
+[32m+[m[32m    dx = 2.0 / (boundary == :fixed ? nx-1 : nx)[m
+[32m+[m[32m    x = [j * dx for j in 0:nx-1][m
+[32m+[m[32m    u0 = [0.5 <= xi <= 1.0 ? 2.0 : 1.0 for xi in x][m
+[32m+[m[32m    nominal_dt = cfl * dx / maximum(abs, u0)[m
+[32m+[m[32m    steps = ceil(Int, t_final / nominal_dt)[m
+[32m+[m[32m    dt = t_final / steps[m
+[32m+[m[32m    u_old = copy(u0)[m
+[32m+[m[32m    u_new = similar(u_old)[m
+[32m+[m[32m    max_cfl = maximum(abs, u_old) * dt / dx[m
+[32m+[m[32m    for _ in 1:steps[m
+[32m+[m[32m        nonlinear_upwind_step!(u_new, u_old, dt, dx; boundary)[m
+[32m+[m[32m        apply_boundary!(u_new; boundary)[m
+[32m+[m[32m        all(isfinite, u_new) || error("更新後に非有限値があります")[m
+[32m+[m[32m        max_cfl = max(max_cfl, maximum(abs, u_new) * dt / dx)[m
+[32m+[m[32m        u_old, u_new = u_new, u_old[m
+[32m+[m[32m    end[m
+[32m+[m[32m    initial_minimum, initial_maximum = extrema(u0)[m
+[32m+[m[32m    low, high = extrema(u_old)[m
+[32m+[m[32m    return (; x, u0, u=u_old, dx, dt, steps, max_cfl, t_final,[m
+[32m+[m[32m        initial_minimum, initial_maximum, minimum=low, maximum=high,[m
+[32m+[m[32m        overshoot=max(high-initial_maximum,0.0), undershoot=max(initial_minimum-low,0.0),[m
+[32m+[m[32m        initial_sum=sum(u0), final_sum=sum(u_old), sum_change=sum(u_old)-sum(u0))[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""固定81点・周期80点の公式計算と3出力を生成する。"""[m
+[32m+[m[32mfunction main(; output_dir::AbstractString=DEFAULT_OUTPUT_DIR, cfl::Real=0.5, t_final::Real=1.0)[m
+[32m+[m[32m    fixed = simulate(; boundary=:fixed, nx=81, cfl, t_final)[m
+[32m+[m[32m    periodic = simulate(; boundary=:periodic, nx=80, cfl, t_final)[m
+[32m+[m[32m    write_outputs(output_dir, fixed, periodic, cfl, t_final)[m
+[32m+[m[32m    println("N02の出力を書き込みました: $(abspath(output_dir))")[m
+[32m+[m[32m    return (; fixed, periodic)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32mif abspath(PROGRAM_FILE) == @__FILE__[m
+[32m+[m[32m    main()[m
+[32m+[m[32mend[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N02_nonlinear_advection/tests.jl b/exercises/N02_nonlinear_advection/tests.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..899f50f[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N02_nonlinear_advection/tests.jl[m
+[36m@@ -0,0 +1,45 @@[m
+[32m+[m[32musing Test[m
+[32m+[m[32mif !isdefined(Main, :N02NonlinearAdvection)[m
+[32m+[m[32m    include(joinpath(@__DIR__, "run.jl"))[m
+[32m+[m[32mend[m
+[32m+[m[32musing .N02NonlinearAdvection[m
+[32m+[m[32m@testset "N02 必須テスト" begin[m
+[32m+[m[32m    @testset "流束と周期添字" begin[m
+[32m+[m[32m        @test burgers_flux(1.) == 0.5[m
+[32m+[m[32m        @test burgers_flux(2.) == 2.[m
+[32m+[m[32m        @test periodic_left_index(1,4) == 4[m
+[32m+[m[32m        @test periodic_left_index(3,4) == 2[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "保存形1ステップと旧配列不変" begin[m
+[32m+[m[32m        old=[1.,2.,1.,1.]; saved=copy(old); new=similar(old)[m
+[32m+[m[32m        nonlinear_upwind_step!(new,old,0.25,1.;boundary=:periodic)[m
+[32m+[m[32m        @test new == [1.,1.625,1.375,1.][m
+[32m+[m[32m        @test old == saved[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "定数場と境界条件" begin[m
+[32m+[m[32m        for (boundary,value) in ((:fixed,1.),(:periodic,0.7))[m
+[32m+[m[32m            old=fill(value,5); new=similar(old)[m
+[32m+[m[32m            nonlinear_upwind_step!(new,old,0.2,1.;boundary)[m
+[32m+[m[32m            apply_boundary!(new;boundary)[m
+[32m+[m[32m            @test new ≈ old[m
+[32m+[m[32m        end[m
+[32m+[m[32m        @test apply_boundary!([4.,2.,3.,8.]) == [1.,2.,3.,3.][m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "CFL・有界性・非線形な波形変形" begin[m
+[32m+[m[32m        for (boundary,nx) in ((:fixed,81),(:periodic,80))[m
+[32m+[m[32m            r=simulate(;boundary,nx)[m
+[32m+[m[32m            @test r.max_cfl <= 0.5+1e-14[m
+[32m+[m[32m            @test 1-1e-13 <= minimum(r.u) <= maximum(r.u) <= 2+1e-13[m
+[32m+[m[32m            # c=1で同じ最終時刻まで移した矩形との離散L1差。周期では左右をつなぐ。[m
+[32m+[m[32m            shifted=[0.5 <= (boundary==:periodic ? mod(x-r.t_final,2.) : x-r.t_final) <= 1.0 ? 2. : 1. for x in r.x][m
+[32m+[m[32m            @test r.dx*sum(abs.(r.u-shifted)) > 0.2[m
+[32m+[m[32m            @test maximum(r.u[findall(>(1.5),r.x)]) > 1.2[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N02 自作テスト" begin[m
+[32m+[m[32m    # TODO(自作): 周期の非定数・非負配列を複数ステップ進め、離散総和保存を確認する。入力・許容誤差・期待値を自分で決める。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32m    # TODO(自作): 周期1ステップSについてS(circshift(u,k)) ≈ circshift(S(u),k)を確認する。非対称な非定数配列、k≠0、同じdtとdxを使う。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N03_diffusion/learning_log.md b/exercises/N03_diffusion/learning_log.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..d2f629f[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N03_diffusion/learning_log.md[m
+[36m@@ -0,0 +1,43 @@[m
+[32m+[m[32m# N03 学習ログ[m
+[32m+[m
+[32m+[m[32m## 予想と式・コード[m
+[32m+[m
+[32m+[m[32m- 無次元の温度・時刻・熱拡散率と物理量の対応：[m
+[32m+[m[32m- 内部点差分と旧配列・新配列、バッファ交換の対応：[m
+[32m+[m[32m- 固定温度と断熱で熱量の変化が異なる理由：[m
+[32m+[m[32m- 断熱端の係数2、端点半セルと台形則の重み：[m
+[32m+[m
+[32m+[m[32m## 結果と解釈[m
+[32m+[m
+[32m+[m[32m- nx、dx、dt、steps、指定と実効Fourier数：[m
+[32m+[m[32m- 両境界の初期・最終熱量、符号付き変化、全時刻の極値：[m
+[32m+[m[32m- 図：[境界比較](results/boundary-comparison.png)、[熱量](results/heat-content.png)、[収束](results/convergence.png)[m
+[32m+[m[32m- 数値：[summary.toml](results/summary.toml)[m
+[32m+[m[32m- 同時刻・同じfoの格子収束、誤差・観測次数、時間1次と合成誤差2次の違い：[m
+[32m+[m[32m- N01・N02の数値拡散と物理拡散の違い、予想との比較、限界：[m
+[32m+[m[32m- 任意実験を行った場合の条件、振動・増幅・初期範囲逸脱、安定性テストの適用範囲：[m
+[32m+[m
+[32m+[m[32m## 必須4群と自作2つのテスト[m
+[32m+[m
+[32m+[m[32m- 配布済み必須4群の入力・期待値・判定の意味：[m
+[32m+[m[32m- 自作1（断熱熱量保存）：非対称非定数配列、ステップ数、独立に求めた初期熱量、許容誤差と根拠：[m
+[32m+[m[32m- 自作1で検出できる誤り／できない誤り：[m
+[32m+[m[32m- 自作2（正弦解析解と格子収束）：格子・時刻・fo、誤差指標、許容範囲と根拠：[m
+[32m+[m[32m- 自作2で検出できる誤り／できない誤り：[m
+[32m+[m[32m- 実行コマンドと結果：[m
+[32m+[m
+[32m+[m[32m## AI利用・出典[m
+[32m+[m
+[32m+[m[32m- 依頼内容（利用なしの場合は「利用なし」）：[m
+[32m+[m[32m- 重要な提案：[m
+[32m+[m[32m- 採用・修正・却下と理由：[m
+[32m+[m[32m- 採用素材の出典、変更点、利用条件（なければ「なし」）：[m
+[32m+[m
+[32m+[m[32m## 理解度チェック・LETUS提出[m
+[32m+[m
+[32m+[m[32m- 対応する授業ID：[m
+[32m+[m[32m- LETUS提出日：[m
+[32m+[m[32m- 提出済み確認：[m
+[32m+[m[32m- 理解できた点：[m
+[32m+[m[32m- 残った疑問：[m
+[32m+[m[32m- 対話全文はLETUSへ提出し、このリポジトリには含めていない：[m
+[1mdiff --git a/exercises/N03_diffusion/provided_support.jl b/exercises/N03_diffusion/provided_support.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..69d83c1[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N03_diffusion/provided_support.jl[m
+[36m@@ -0,0 +1,149 @@[m
+[32m+[m[32m# 入力検証・描画・保存の提供ファイル。学生の編集対象ではありません。[m
+[32m+[m[32musing Plots, TOML[m
+[32m+[m[32mconst DEFAULT_OUTPUT_DIR=joinpath(@__DIR__,"results")[m
+[32m+[m[32mpositive_finite(v,name) = isfinite(v) && v>0 ? nothing : throw(ArgumentError("$name は有限な正の値です"))[m
+[32m+[m[32mvalidate_boundary(b) = b in (:fixed,:insulated) ? nothing : throw(ArgumentError("boundaryは:fixedまたは:insulatedです"))[m
+[32m+[m[32mvalidate_initial(i) = i in (:pulse,:mode) ? nothing : throw(ArgumentError("initialは:pulseまたは:modeです"))[m
+[32m+[m[32mfunction validate_buffers(a,b,boundary)[m
+[32m+[m[32m    validate_boundary(boundary)[m
+[32m+[m[32m    all(u->u isa AbstractVector{<:AbstractFloat},(a,b)) || throw(ArgumentError("新旧バッファは浮動小数の一次元配列です"))[m
+[32m+[m[32m    Base.require_one_based_indexing(a,b)[m
+[32m+[m[32m    length(a)==length(b)>=3 || throw(ArgumentError("新旧は同長で3点以上必要です"))[m
+[32m+[m[32m    Base.mightalias(a,b) && throw(ArgumentError("新旧バッファが重なっています"))[m
+[32m+[m[32m    all(isfinite,b) || throw(ArgumentError("旧配列は有限値にしてください"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_simulation_inputs(boundary,nx,d,fo,t,initial)[m
+[32m+[m[32m    validate_boundary(boundary); validate_initial(initial)[m
+[32m+[m[32m    !(nx isa Bool) && nx>=3 || throw(ArgumentError("nxは3以上の整数です（Bool不可）"))[m
+[32m+[m[32m    for (v,name) in ((d,"diffusivity"),(fo,"fo"),(t,"t_final"))[m
+[32m+[m[32m        positive_finite(v,name)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction ensure_finite(values,step,t,fo)[m
+[32m+[m[32m    all(isfinite,values) || error("非有限値のため停止: step=$step, t=$t, effective_fo=$fo")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction summary_section(r)[m
+[32m+[m[32m    section=Dict{String,Any}("nx"=>length(r.x))[m
+[32m+[m[32m    for key in (:dx,:dt,:steps,:requested_fo,:fo,:t_final,:diffusivity,:initial_heat,:final_heat,[m
+[32m+[m[32m        :heat_change,:initial_minimum,:initial_maximum,:minimum,:maximum)[m
+[32m+[m[32m        section[string(key)]=getproperty(r,key)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    all(isfinite,values(section)) || error("非有限な診断量は保存できません")[m
+[32m+[m[32m    return section[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction convergence_results()[m
+[32m+[m[32m    result=Dict{String,Any}()[m
+[32m+[m[32m    for boundary in (:fixed,:insulated)[m
+[32m+[m[32m        nx=[41,81,161][m
+[32m+[m[32m        runs=[simulate(;boundary,nx=n,initial=:mode) for n in nx][m
+[32m+[m[32m        errors=[maximum(abs.(r.u-analytic_solution(r.x,r.t_final;boundary))) for r in runs][m
+[32m+[m[32m        orders=log2.(errors[1:2]./errors[2:3])[m
+[32m+[m[32m        all(isfinite,vcat(errors,orders)) || error("非有限な収束診断量です")[m
+[32m+[m[32m        result[string(boundary)]=Dict("nx"=>nx,"dx"=>[r.dx for r in runs],"errors"=>errors,"orders"=>orders)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    return result[m
+[32m+[m[32mend[m
+[32m+[m[32mconst SNAPSHOT_TIMES=(0.25,0.50,0.75,1.0)[m
+[32m+[m[32m# Avoid the pale yellow end of viridis on a white background.[m
+[32m+[m[32mconst SNAPSHOT_COLORS=[get(cgrad(:viridis),v) for v in (0.08,0.30,0.53,0.76)][m
+[32m+[m[32m"""Standard pulse snapshots on the final run's grid and timestep; reuse t=1."""[m
+[32m+[m[32mfunction boundary_snapshots(final;boundary)[m
+[32m+[m[32m    return map(SNAPSHOT_TIMES) do t[m
+[32m+[m[32m        r=t==final.t_final ? final : simulate(;boundary,nx=length(final.x),[m
+[32m+[m[32m            diffusivity=final.diffusivity,fo=final.requested_fo,t_final=t)[m
+[32m+[m[32m        r.x==final.x && r.u0==final.u0 && r.dt==final.dt && r.fo==final.fo ||[m
+[32m+[m[32m            error("比較図の時刻・格子・刻みが標準計算と一致しません: t=$t")[m
+[32m+[m[32m        ensure_finite(r.u,r.steps,r.t_final,r.fo)[m
+[32m+[m[32m        r[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction boundary_comparison_plot(fixed,insulated)[m
+[32m+[m[32m    p=plot(fixed.x,fixed.u0;label="",color=:gray,linestyle=:dot,linewidth=2,[m
+[32m+[m[32m        xlabel="x (dimensionless)",ylabel="u (dimensionless)",[m
+[32m+[m[32m        title="Diffusion: fixed / insulated",ylims=(-0.05,1.05),legend=false)[m
+[32m+[m[32m    for (final,boundary,style) in ((fixed,:fixed,:solid),(insulated,:insulated,:dash))[m
+[32m+[m[32m        for (r,color) in zip(boundary_snapshots(final;boundary),SNAPSHOT_COLORS)[m
+[32m+[m[32m            plot!(p,r.x,r.u;label="",color,linestyle=style,linewidth=2)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    # Two independent keys beside the single data panel; neither covers curves.[m
+[32m+[m[32m    time_key=plot(;axis=false,grid=false,legend=:left,legendtitle="Time",framestyle=:none)[m
+[32m+[m[32m    for (label,color) in zip(("t = 0.25","t = 0.50","t = 0.75","t = 1.0"),SNAPSHOT_COLORS)[m
+[32m+[m[32m        scatter!(time_key,[NaN],[NaN];label,color,markershape=:square,markerstrokewidth=0)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    boundary_key=plot(;axis=false,grid=false,legend=false,framestyle=:none,[m
+[32m+[m[32m        xlims=(0,1),ylims=(0,1))[m
+[32m+[m[32m    annotate!(boundary_key,0.02,0.85,text("Line style",12,:left))[m
+[32m+[m[32m    # Draw long samples explicitly: a narrow automatic legend shortens dashes.[m
+[32m+[m[32m    for (y,label,style,color) in ((0.68,"Fixed temperature",:solid,:black),[m
+[32m+[m[32m        (0.50,"Insulated",:dash,:black),(0.32,"Initial (t = 0)",:dot,:gray))[m
+[32m+[m[32m        plot!(boundary_key,[0.02,0.28],[y,y];label="",color,linestyle=style,linewidth=2)[m
+[32m+[m[32m        annotate!(boundary_key,0.33,y,text(label,9,:left))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    return plot(p,time_key,boundary_key;layout=@layout([a{0.72w} [b; c]]),[m
+[32m+[m[32m        size=(800,500),background_color=:white)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction comparison_plot(a,b;unstable=false)[m
+[32m+[m[32m    p=plot(a.x,a.u0;label="Initial",linewidth=2,xlabel="x (dimensionless)",ylabel="u (dimensionless)",[m
+[32m+[m[32m        title="Diffusion, t = $(a.t_final)",size=(800,500))[m
+[32m+[m[32m    plot!(p,a.x,a.u;label=unstable ? "Stable (fo=$(round(a.fo;digits=4)))" : "Fixed temperature",linewidth=2)[m
+[32m+[m[32m    plot!(p,b.x,b.u;label=unstable ? "Unstable (fo=$(round(b.fo;digits=4)))" : "Insulated",linewidth=2)[m
+[32m+[m[32m    low=min(minimum(a.u0),minimum(a.u),minimum(b.u))[m
+[32m+[m[32m    high=max(maximum(a.u0),maximum(a.u),maximum(b.u))[m
+[32m+[m[32m    padding=max(0.05*(high-low),0.01)[m
+[32m+[m[32m    ylims!(p,(low-padding,high+padding))[m
+[32m+[m[32m    return p[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction make_plots(directory,fixed,insulated,convergence)[m
+[32m+[m[32m    savefig(boundary_comparison_plot(fixed,insulated),joinpath(directory,"boundary-comparison.png"))[m
+[32m+[m[32m    p=plot(fixed.times,fixed.heat_history;label="Fixed temperature",color=:black,linestyle=:solid,linewidth=2,[m
+[32m+[m[32m        xlabel="t (dimensionless)",ylabel="Heat content H (dimensionless)",size=(800,500))[m
+[32m+[m[32m    plot!(p,insulated.times,insulated.heat_history;label="Insulated",color=:black,linestyle=:dash,linewidth=2)[m
+[32m+[m[32m    hline!(p,[fixed.initial_heat];label="Initial H",color=:gray,linestyle=:dot)[m
+[32m+[m[32m    savefig(p,joinpath(directory,"heat-content.png"))[m
+[32m+[m[32m    p=plot(;xscale=:log10,yscale=:log10,xlabel="dx",ylabel="Maximum absolute error",size=(800,500),legend=:topleft)[m
+[32m+[m[32m    for (boundary,label,style,marker) in (("fixed","Fixed temperature",:solid,:circle),("insulated","Insulated",:dash,:diamond))[m
+[32m+[m[32m        c=convergence[boundary][m
+[32m+[m[32m        plot!(p,c["dx"],c["errors"];label,color=:black,linestyle=style,marker,linewidth=2)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    c=convergence["fixed"][m
+[32m+[m[32m    plot!(p,c["dx"],c["errors"][1].*(c["dx"]./c["dx"][1]).^2;label="Second order",color=:black,linestyle=:dot)[m
+[32m+[m[32m    savefig(p,joinpath(directory,"convergence.png"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction save_staged(draw,output_dir,summary,names)[m
+[32m+[m[32m    mktempdir() do temporary[m
+[32m+[m[32m        open(joinpath(temporary,"summary.toml"),"w") do io[m
+[32m+[m[32m            TOML.print(io,summary;sorted=true)[m
+[32m+[m[32m        end[m
+[32m+[m[32m        draw(temporary)[m
+[32m+[m[32m        sizes=[filesize(joinpath(temporary,n)) for n in names][m
+[32m+[m[32m        all(s->0<s<=5*1024^2,sizes) && sum(sizes)<=10*1024^2 || error("N03出力サイズの上限を超えています")[m
+[32m+[m[32m        for n in filter(n->endswith(n,".png"),names)[m
+[32m+[m[32m            open(joinpath(temporary,n)) do io[m
+[32m+[m[32m                read(io,8)==UInt8[0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a] || error("PNG出力が不正です: $n")[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        mkpath(output_dir)[m
+[32m+[m[32m        for n in names[m
+[32m+[m[32m            cp(joinpath(temporary,n),joinpath(output_dir,n);force=true)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_outputs(output_dir,fixed,insulated,convergence)[m
+[32m+[m[32m    summary=Dict("course_id"=>"N03","units"=>"dimensionless; heat_content H uses trapezoidal endpoint weights",[m
+[32m+[m[32m        "domain"=>[0.,2.],"diffusivity"=>0.1,"requested_fo"=>0.4,"t_final"=>1.,[m
+[32m+[m[32m        "fixed"=>summary_section(fixed),"insulated"=>summary_section(insulated),"convergence"=>convergence)[m
+[32m+[m[32m    save_staged(output_dir,summary,("boundary-comparison.png","heat-content.png","convergence.png","summary.toml")) do temp[m
+[32m+[m[32m        make_plots(temp,fixed,insulated,convergence)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction make_stability_plot(directory,stable,unstable)[m
+[32m+[m[32m    savefig(comparison_plot(stable,unstable;unstable=true),joinpath(directory,"stability-comparison.png"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_stability_outputs(output_dir,stable,unstable)[m
+[32m+[m[32m    summary=Dict("course_id"=>"N03","units"=>"dimensionless","boundary"=>"fixed",[m
+[32m+[m[32m        "stable"=>summary_section(stable),"unstable"=>summary_section(unstable))[m
+[32m+[m[32m    save_staged(output_dir,summary,("stability-comparison.png","summary.toml")) do temp[m
+[32m+[m[32m        make_stability_plot(temp,stable,unstable)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N03_diffusion/run.jl b/exercises/N03_diffusion/run.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..1731d17[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N03_diffusion/run.jl[m
+[36m@@ -0,0 +1,138 @@[m
+[32m+[m[32m# N03: 内部点更新、断熱端更新、熱量積分のTODO 3か所を実装する。[m
+[32m+[m[32m# 読む順: 初期条件 → 境界 → 1ステップ → 熱量 → simulate → main。[m
+[32m+[m[32mmodule N03Diffusion[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32mexport initial_condition, analytic_solution, apply_boundary!, diffusion_step!, thermal_content,[m
+[32m+[m[32m    simulate, main, stability_experiment[m
+[32m+[m
+[32m+[m[32m"""無次元領域[0,2]上の矩形、または境界に適合する解析モード。"""[m
+[32m+[m[32mfunction initial_condition(x; initial=:pulse, boundary=:fixed)[m
+[32m+[m[32m    validate_boundary(boundary)[m
+[32m+[m[32m    validate_initial(initial)[m
+[32m+[m[32m    all(isfinite,x) || throw(ArgumentError("座標を有限値にしてください"))[m
+[32m+[m[32m    initial == :mode && return analytic_solution(x,0.;boundary)[m
+[32m+[m[32m    return [0.5 <= xi <= 1.0 ? 1.0 : 0.0 for xi in x][m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""解析モード専用の解。矩形初期値の解析解ではない。"""[m
+[32m+[m[32mfunction analytic_solution(x,t::Real; boundary=:fixed,diffusivity::Real=0.1)[m
+[32m+[m[32m    validate_boundary(boundary)[m
+[32m+[m[32m    positive_finite(diffusivity,"diffusivity")[m
+[32m+[m[32m    isfinite(t) && t >= 0 || throw(ArgumentError("tは有限な非負値です"))[m
+[32m+[m[32m    all(isfinite,x) || throw(ArgumentError("座標を有限値にしてください"))[m
+[32m+[m[32m    amplitude=exp(-diffusivity*(pi/2)^2*t)[m
+[32m+[m[32m    return boundary == :fixed ? amplitude .* sin.(pi .* x ./ 2) :[m
+[32m+[m[32m        0.5 .+ 0.5 .* amplitude .* cos.(pi .* x ./ 2)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""固定端は0。断熱端は旧配列の鏡映ゴースト点から更新する。"""[m
+[32m+[m[32mfunction apply_boundary!(u_new,u_old,r::Real;boundary=:fixed)[m
+[32m+[m[32m    validate_buffers(u_new,u_old,boundary)[m
+[32m+[m[32m    positive_finite(r,"r")[m
+[32m+[m[32m    if boundary == :fixed[m
+[32m+[m[32m        u_new[1]=0.0[m
+[32m+[m[32m        u_new[end]=0.0[m
+[32m+[m[32m    else[m
+[32m+[m[32m        # TODO(N03): 旧配列を用い、半セルに対応する係数で両端を更新する。[m
+[32m+[m[32m        error("未実装 N03: 断熱端の更新を実装してください")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    return u_new[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""空間中心差分・陽Euler。境界もここで更新し、旧配列は変更しない。"""[m
+[32m+[m[32mfunction diffusion_step!(u_new,u_old,dt::Real,dx::Real,diffusivity::Real;boundary=:fixed)[m
+[32m+[m[32m    validate_buffers(u_new,u_old,boundary)[m
+[32m+[m[32m    for (value,name) in ((dt,"dt"),(dx,"dx"),(diffusivity,"diffusivity"))[m
+[32m+[m[32m        positive_finite(value,name)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    r=diffusivity*dt/dx^2[m
+[32m+[m[32m    positive_finite(r,"実効Fourier数")[m
+[32m+[m[32m    for i in 2:length(u_old)-1[m
+[32m+[m[32m        # TODO(N03): 旧配列だけから内部点の次時刻値を計算する。[m
+[32m+[m[32m        error("未実装 N03: 内部点の更新を実装してください")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    apply_boundary!(u_new,u_old,r;boundary)[m
+[32m+[m[32m    return u_new[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""端点に半分の重みを付けた無次元熱量H。"""[m
+[32m+[m[32mfunction thermal_content(u,dx::Real)[m
+[32m+[m[32m    u isa AbstractVector{<:Real} && length(u)>=3 || throw(ArgumentError("熱量配列は3点以上です"))[m
+[32m+[m[32m    Base.require_one_based_indexing(u)[m
+[32m+[m[32m    all(isfinite,u) || throw(ArgumentError("温度を有限値にしてください"))[m
+[32m+[m[32m    positive_finite(dx,"dx")[m
+[32m+[m[32m    # TODO(N03): 台形則の積分を返す。[m
+[32m+[m[32m    error("未実装 N03: thermal_contentを実装してください")[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""指定時刻へ刻みを合わせる。foは実効値、requested_foは指定値。[m
+[32m+[m[32m温度全履歴は保持せず、熱量履歴と初期・最終温度、全時刻の極値を返す。[m
+[32m+[m[32m安定条件超過や負値も許容し、非有限値はstep・t・foを示して停止する。[m
+[32m+[m[32m"""[m
+[32m+[m[32mfunction simulate(;boundary=:fixed,nx::Integer=81,diffusivity::Real=0.1,[m
+[32m+[m[32m    fo::Real=0.4,t_final::Real=1.0,initial=:pulse)[m
+[32m+[m[32m    validate_simulation_inputs(boundary,nx,diffusivity,fo,t_final,initial)[m
+[32m+[m[32m    dx=2.0/(nx-1)[m
+[32m+[m[32m    x=[j*dx for j in 0:nx-1][m
+[32m+[m[32m    u0=initial_condition(x;initial,boundary)[m
+[32m+[m[32m    # 正弦の浮動小数丸めも含め、固定端を正確に0へ揃える。[m
+[32m+[m[32m    if boundary == :fixed[m
+[32m+[m[32m        u0[1]=0.; u0[end]=0.[m
+[32m+[m[32m    end[m
+[32m+[m[32m    nominal_dt=fo*dx^2/diffusivity[m
+[32m+[m[32m    positive_finite(nominal_dt,"nominal_dt")[m
+[32m+[m[32m    count=t_final/nominal_dt[m
+[32m+[m[32m    isfinite(count) && count < typemax(Int) || throw(ArgumentError("ステップ数が表現範囲を超えています"))[m
+[32m+[m[32m    steps=max(1,ceil(Int,count))[m
+[32m+[m[32m    dt=t_final/steps[m
+[32m+[m[32m    effective_fo=diffusivity*dt/dx^2[m
+[32m+[m[32m    positive_finite(effective_fo,"実効Fourier数")[m
+[32m+[m[32m    u_old=copy(u0); u_new=similar(u_old)[m
+[32m+[m[32m    initial_heat=thermal_content(u0,dx)[m
+[32m+[m[32m    initial_minimum,initial_maximum=extrema(u0)[m
+[32m+[m[32m    low,high=initial_minimum,initial_maximum[m
+[32m+[m[32m    ensure_finite((initial_heat,low,high),0,0.,effective_fo)[m
+[32m+[m[32m    times=collect(range(0.,t_final;length=steps+1))[m
+[32m+[m[32m    heat_history=Vector{Float64}(undef,steps+1)[m
+[32m+[m[32m    heat_history[1]=initial_heat[m
+[32m+[m[32m    for step in 1:steps[m
+[32m+[m[32m        diffusion_step!(u_new,u_old,dt,dx,diffusivity;boundary)[m
+[32m+[m[32m        ensure_finite(u_new,step,times[step+1],effective_fo)[m
+[32m+[m[32m        heat=thermal_content(u_new,dx)[m
+[32m+[m[32m        ensure_finite((heat,),step,times[step+1],effective_fo)[m
+[32m+[m[32m        heat_history[step+1]=heat[m
+[32m+[m[32m        low=min(low,minimum(u_new)); high=max(high,maximum(u_new))[m
+[32m+[m[32m        u_old,u_new=u_new,u_old[m
+[32m+[m[32m    end[m
+[32m+[m[32m    final_heat=heat_history[end][m
+[32m+[m[32m    heat_change=final_heat-initial_heat[m
+[32m+[m[32m    ensure_finite((heat_change,),steps,t_final,effective_fo)[m
+[32m+[m[32m    return (;x,u0,u=u_old,dx,dt,steps,fo=effective_fo,requested_fo=fo,t_final,[m
+[32m+[m[32m        diffusivity,times,heat_history,initial_heat,final_heat,heat_change,[m
+[32m+[m[32m        initial_minimum,initial_maximum,minimum=low,maximum=high)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""両境界の標準計算と解析モードの格子収束から公式4出力を生成する。"""[m
+[32m+[m[32mfunction main(;output_dir::AbstractString=DEFAULT_OUTPUT_DIR)[m
+[32m+[m[32m    fixed=simulate()[m
+[32m+[m[32m    insulated=simulate(;boundary=:insulated)[m
+[32m+[m[32m    convergence=convergence_results()[m
+[32m+[m[32m    write_outputs(output_dir,fixed,insulated,convergence)[m
+[32m+[m[32m    println("N03の出力を書き込みました: $(abspath(output_dir))")[m
+[32m+[m[32m    return (;fixed,insulated,convergence)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""任意実験。固定温度で安定・不安定条件を同時刻まで比較する。"""[m
+[32m+[m[32mfunction stability_experiment(;output_dir::AbstractString,fo::Real=0.6,t_final::Real=0.1)[m
+[32m+[m[32m    isfinite(fo) && fo>0.5 || throw(ArgumentError("比較用foは有限で0.5より大きくしてください"))[m
+[32m+[m[32m    stable=simulate(;fo=0.4,t_final)[m
+[32m+[m[32m    unstable=simulate(;fo,t_final)[m
+[32m+[m[32m    unstable.fo>0.5 || throw(ArgumentError("最終時刻への調整後の実効foが0.5以下です。安定条件超過の比較になるよう条件を調整してください"))[m
+[32m+[m[32m    write_stability_outputs(output_dir,stable,unstable)[m
+[32m+[m[32m    return (;stable,unstable)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32mif abspath(PROGRAM_FILE)==@__FILE__[m
+[32m+[m[32m    main()[m
+[32m+[m[32mend[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N03_diffusion/tests.jl b/exercises/N03_diffusion/tests.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..5dc49a7[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N03_diffusion/tests.jl[m
+[36m@@ -0,0 +1,42 @@[m
+[32m+[m[32musing Test[m
+[32m+[m[32mif !isdefined(Main,:N03Diffusion)[m
+[32m+[m[32m    include(joinpath(@__DIR__,"run.jl"))[m
+[32m+[m[32mend[m
+[32m+[m[32mimport .N03Diffusion[m
+[32m+[m[32m@testset "N03 必須テスト" begin[m
+[32m+[m[32m    @testset "小配列1ステップと旧配列不変" begin[m
+[32m+[m[32m        old=[1.,2.,4.,3.]; saved=copy(old); new=similar(old)[m
+[32m+[m[32m        N03Diffusion.diffusion_step!(new,old,0.25,1.,1.;boundary=:insulated)[m
+[32m+[m[32m        @test new == [1.5,2.25,3.25,3.5][m
+[32m+[m[32m        @test old == saved[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "定数場と固定端" begin[m
+[32m+[m[32m        for (boundary,value) in ((:insulated,0.7),(:fixed,0.))[m
+[32m+[m[32m            old=fill(value,5); new=similar(old)[m
+[32m+[m[32m            N03Diffusion.diffusion_step!(new,old,0.2,1.,1.;boundary)[m
+[32m+[m[32m            @test new ≈ old[m
+[32m+[m[32m        end[m
+[32m+[m[32m        old=[1.,2.,4.,3.]; new=similar(old)[m
+[32m+[m[32m        N03Diffusion.diffusion_step!(new,old,0.25,1.,1.)[m
+[32m+[m[32m        @test new == [0.,2.25,3.25,0.][m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "台形則の熱量" begin[m
+[32m+[m[32m        @test N03Diffusion.thermal_content([1.,2.,4.,3.],1.) == 8.[m
+[32m+[m[32m        @test N03Diffusion.thermal_content([1.5,2.25,3.25,3.5],1.) == 8.[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "標準計算の安定性" begin[m
+[32m+[m[32m        for boundary in (:fixed,:insulated)[m
+[32m+[m[32m            r=N03Diffusion.simulate(;boundary)[m
+[32m+[m[32m            @test r.steps*r.dt ≈ r.t_final == 1.[m
+[32m+[m[32m            @test 0 < r.fo <= 0.5[m
+[32m+[m[32m            @test all(isfinite,r.u)[m
+[32m+[m[32m            @test -1e-13 <= r.minimum <= r.maximum <= 1+1e-13[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N03 自作テスト" begin[m
+[32m+[m[32m    # TODO(自作): 非対称な非定数配列を複数ステップ進め、断熱の台形則熱量保存を確認する。初期熱量を独立に計算し、点数・ステップ数・値の大きさから許容誤差を決める。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32m    # TODO(自作): 固定温度の正弦解析解と41・81・161点の数値解を同時刻・同じfoで比較し、誤差の減少と観測次数を確認する。指標・許容範囲・検出限界を説明する。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N04_advection_diffusion/learning_log.md b/exercises/N04_advection_diffusion/learning_log.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..b25844d[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N04_advection_diffusion/learning_log.md[m
+[36m@@ -0,0 +1,35 @@[m
+[32m+[m[32m# N04 学習ログ[m
+[32m+[m
+[32m+[m[32m## モデルの選択と予想[m
+[32m+[m
+[32m+[m[32m- SELECTED_MODEL（linear / nonlinear）：[m
+[32m+[m[32m- 選択理由、連続式と離散式、u・D・周期積分の意味（すべて無次元）：[m
+[32m+[m[32m- 同じ初期値・格子・時刻・刻みの3条件で予想する違い：[m
+[32m+[m
+[32m+[m[32m## 式・実装・テストの対応[m
+[32m+[m
+[32m+[m[32m- 選択流束、周期左右隣接、同じ旧配列を使う合成更新：[m
+[32m+[m[32m- CFL＋2Fo、safety、実効刻み、個別上限のminでは不足する理由：[m
+[32m+[m[32m- 必須4群の期待値と検出する誤り：[m
+[32m+[m[32m- 自作保存テストの入力、初期積分、反復回数、許容誤差の根拠：[m
+[32m+[m[32m- 自作収束テストの解析解、40・80・160点の誤差、次数、許容範囲の根拠：[m
+[32m+[m[32m- 各テストで検出できる誤りと限界：[m
+[32m+[m[32m- 実行コマンド、結果、過去課題の回帰：[m
+[32m+[m
+[32m+[m[32m## 結果と考察[m
+[32m+[m
+[32m+[m[32m- 選択モデルのresults/<model>/の公式4ファイルへのリンク：[m
+[32m+[m[32m- 移流のみ・拡散のみ・移流拡散の比較、物理拡散と数値拡散の違い：[m
+[32m+[m[32m- 初期離散積分、変化の最大値、全時刻の極値と最大安定数：[m
+[32m+[m[32m- 滑らかな解析モードの誤差と格子収束、N03との次数の違い：[m
+[32m+[m[32m- つまずき、修正、残る限界：[m
+[32m+[m
+[32m+[m[32m## AI利用・出典[m
+[32m+[m
+[32m+[m[32m- 依頼と重要な提案、採用・修正・却下の理由と確認方法（利用なしの場合はその旨）：[m
+[32m+[m[32m- 外部資料・コードの出典、変更点、利用条件：[m
+[32m+[m
+[32m+[m[32m## 理解度チェック・LETUS提出[m
+[32m+[m
+[32m+[m[32m- 授業ID：N04[m
+[32m+[m[32m- 提出日、提出済み確認、理解できた点：[m
+[1mdiff --git a/exercises/N04_advection_diffusion/provided_support.jl b/exercises/N04_advection_diffusion/provided_support.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..7e9f894[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N04_advection_diffusion/provided_support.jl[m
+[36m@@ -0,0 +1,242 @@[m
+[32m+[m[32m# 入力検証・解析解・診断・描画・保存の提供部分。学生の編集対象ではありません。[m
+[32m+[m[32musing Plots, TOML[m
+[32m+[m[32mconst DEFAULT_OUTPUT_DIR=joinpath(@__DIR__,"results")[m
+[32m+[m[32mfinite_real(v,name) = v isa Real && isfinite(v) ? nothing : throw(ArgumentError("$name は有限な実数です"))[m
+[32m+[m[32mfunction nonnegative_finite(v,name)[m
+[32m+[m[32m    finite_real(v,name)[m
+[32m+[m[32m    v>=0 || throw(ArgumentError("$name は非負です"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction positive_finite(v,name)[m
+[32m+[m[32m    finite_real(v,name)[m
+[32m+[m[32m    v>0 || throw(ArgumentError("$name は正です"))[m
+[32m+[m[32mend[m
+[32m+[m[32mvalidate_model(m) = m in (:linear,:nonlinear) ? nothing : throw(ArgumentError("SELECTED_MODELを:linearまたは:nonlinearに設定してください（model=$m）"))[m
+[32m+[m[32mfunction validate_speed(model,speed)[m
+[32m+[m[32m    finite_real(speed,"speed")[m
+[32m+[m[32m    model==:linear && positive_finite(speed,"線形speed")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_safety(safety)[m
+[32m+[m[32m    positive_finite(safety,"safety")[m
+[32m+[m[32m    safety<=1 || throw(ArgumentError("safetyは0より大きく1以下です"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_timestep_inputs(a,dx,d,safety)[m
+[32m+[m[32m    nonnegative_finite(a,"max_speed"); positive_finite(dx,"dx")[m
+[32m+[m[32m    nonnegative_finite(d,"diffusivity"); validate_safety(safety)[m
+[32m+[m[32m    a>0 || d>0 || throw(ArgumentError("移流速度とdiffusivityがともに0では刻みを定義できません"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction checked_timestep(dt)[m
+[32m+[m[32m    positive_finite(dt,"合成条件のdt（係数・dxの表現範囲を確認）")[m
+[32m+[m[32m    return dt[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction maximum_speed(u,model,advection,speed)[m
+[32m+[m[32m    !advection && return 0.[m
+[32m+[m[32m    if model==:nonlinear[m
+[32m+[m[32m        minimum(u)>=0 || throw(ArgumentError("非線形移流は非負速度の範囲だけに対応します"))[m
+[32m+[m[32m        return maximum(u)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    return speed[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction stability_numbers(a,dt,dx,d)[m
+[32m+[m[32m    cfl=a*(dt/dx); fo=d*(dt/dx)/dx[m
+[32m+[m[32m    all(isfinite,(cfl,fo)) || throw(ArgumentError("CFL・Foが有限ではありません"))[m
+[32m+[m[32m    cfl+2fo<=1+32eps(Float64) || throw(ArgumentError("合成安定条件CFL+2Fo<=1を超えています: CFL=$cfl, Fo=$fo"))[m
+[32m+[m[32m    return cfl,fo[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_step(a,b,dt,dx,d,model,advection,speed)[m
+[32m+[m[32m    validate_model(model); validate_speed(model,speed)[m
+[32m+[m[32m    advection isa Bool || throw(ArgumentError("advectionはBoolです"))[m
+[32m+[m[32m    all(u->u isa AbstractVector{<:AbstractFloat},(a,b)) || throw(ArgumentError("新旧配列は浮動小数の一次元配列です"))[m
+[32m+[m[32m    Base.require_one_based_indexing(a,b)[m
+[32m+[m[32m    length(a)==length(b)>=3 || throw(ArgumentError("新旧配列は同長で3点以上です"))[m
+[32m+[m[32m    Base.mightalias(a,b) && throw(ArgumentError("新旧配列が重なっています"))[m
+[32m+[m[32m    all(isfinite,b) || throw(ArgumentError("旧配列は有限値にしてください"))[m
+[32m+[m[32m    positive_finite(dt,"dt"); positive_finite(dx,"dx"); nonnegative_finite(d,"diffusivity")[m
+[32m+[m[32m    stability_numbers(maximum_speed(b,model,advection,speed),dt,dx,d)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_simulation(model,advection,nx,d,speed,safety,t,initial)[m
+[32m+[m[32m    validate_model(model); validate_speed(model,speed); validate_safety(safety)[m
+[32m+[m[32m    advection isa Bool || throw(ArgumentError("advectionはBoolです"))[m
+[32m+[m[32m    nx isa Integer && !(nx isa Bool) && nx>=3 || throw(ArgumentError("nxは3以上の整数です（Bool不可）"))[m
+[32m+[m[32m    nonnegative_finite(d,"diffusivity"); positive_finite(t,"t_final")[m
+[32m+[m[32m    initial in (:pulse,:mode) || throw(ArgumentError("initialは:pulseまたは:modeです"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction ensure_finite(values,model,step,t,cfl,fo)[m
+[32m+[m[32m    all(isfinite,values) || error("非有限値のため停止: model=$model, step=$step, t=$t, CFL=$cfl, Fo=$fo")[m
+[32m+[m[32mend[m
+[32m+[m[32m"""周期[0,2)の矩形、または選択モデルの解析モードの初期値。"""[m
+[32m+[m[32mfunction initial_condition(x;model=SELECTED_MODEL,initial=:pulse,diffusivity=0.1,speed=1.0)[m
+[32m+[m[32m    validate_model(model); validate_speed(model,speed); nonnegative_finite(diffusivity,"diffusivity")[m
+[32m+[m[32m    all(isfinite,x) || throw(ArgumentError("xは有限値です"))[m
+[32m+[m[32m    initial in (:pulse,:mode) || throw(ArgumentError("initialは:pulseまたは:modeです"))[m
+[32m+[m[32m    initial==:mode && return analytic_solution(x,0.;model,diffusivity,speed)[m
+[32m+[m[32m    return [0.5<=xi<=1. ? 2. : 1. for xi in x][m
+[32m+[m[32mend[m
+[32m+[m[32m"""滑らかな解析モード専用。矩形の解析解ではない。非線形の平均速度は1。"""[m
+[32m+[m[32mfunction analytic_solution(x,t;model=SELECTED_MODEL,diffusivity=0.1,speed=1.0)[m
+[32m+[m[32m    validate_model(model); validate_speed(model,speed)[m
+[32m+[m[32m    nonnegative_finite(diffusivity,"diffusivity"); nonnegative_finite(t,"t")[m
+[32m+[m[32m    all(isfinite,x) || throw(ArgumentError("xは有限値です"))[m
+[32m+[m[32m    if model==:linear[m
+[32m+[m[32m        return 1 .+ 0.5exp(-diffusivity*pi^2*t).*sin.(pi.*(x.-speed*t))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    positive_finite(diffusivity,"非線形解析モードのdiffusivity")[m
+[32m+[m[32m    # max |u-1| at t=0 is 2D*k*A/sqrt(1-A^2), A=0.5.[m
+[32m+[m[32m    diffusivity*pi/sqrt(0.75)<=1 || throw(ArgumentError("非線形解析モードで負速度を生むdiffusivityです"))[m
+[32m+[m[32m    a=0.5exp(-diffusivity*pi^2*t); theta=pi.*(x.-t)[m
+[32m+[m[32m    return 1 .+ 2diffusivity*pi*a.*sin.(theta)./(1 .+ a.*cos.(theta))[m
+[32m+[m[32mend[m
+[32m+[m[32m"""周期等幅セルの離散積分。終点を重複させず、半重みを付けない。"""[m
+[32m+[m[32mfunction conserved_integral(u,dx)[m
+[32m+[m[32m    u isa AbstractVector{<:Real} && length(u)>=3 || throw(ArgumentError("積分配列は3点以上の実数ベクトルです"))[m
+[32m+[m[32m    Base.require_one_based_indexing(u)[m
+[32m+[m[32m    all(isfinite,u) || throw(ArgumentError("積分配列は有限値です"))[m
+[32m+[m[32m    positive_finite(dx,"dx")[m
+[32m+[m[32m    result=dx*sum(u)[m
+[32m+[m[32m    finite_real(result,"離散積分")[m
+[32m+[m[32m    return result[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction convergence_results(model)[m
+[32m+[m[32m    nx=[40,80,160][m
+[32m+[m[32m    runs=[simulate(;model,nx=n,initial=:mode) for n in nx][m
+[32m+[m[32m    errors=[maximum(abs.(r.u-analytic_solution(r.x,r.t_final;model))) for r in runs][m
+[32m+[m[32m    for (r,error) in zip(runs,errors)[m
+[32m+[m[32m        ensure_finite((error,),model,r.steps,r.t_final,r.max_cfl,r.fo)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    orders=log2.(errors[1:2]./errors[2:3])[m
+[32m+[m[32m    r=last(runs)[m
+[32m+[m[32m    ensure_finite(orders,model,r.steps,r.t_final,r.max_cfl,r.fo)[m
+[32m+[m[32m    return Dict("initial"=>"mode","nx"=>nx,"dx"=>[r.dx for r in runs],"errors"=>errors,"orders"=>orders)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction summary_section(r)[m
+[32m+[m[32m    section=Dict{String,Any}("nx"=>length(r.x),"model"=>string(r.model),"advection"=>r.advection,[m
+[32m+[m[32m        "initial"=>string(r.initial),"speed_role"=>r.model==:linear ? "constant advection speed" : "unused; velocity is u, analytic mean is 1")[m
+[32m+[m[32m    for key in (:speed,:diffusivity,:dx,:dt,:steps,:t_final,:requested_safety,:initial_integral,[m
+[32m+[m[32m        :final_integral,:integral_change,:minimum,:maximum,:max_cfl,:fo,:max_stability_number)[m
+[32m+[m[32m        value=getproperty(r,key)[m
+[32m+[m[32m        ensure_finite((value,),r.model,r.steps,r.t_final,r.max_cfl,r.fo)[m
+[32m+[m[32m        section[string(key)]=value[m
+[32m+[m[32m    end[m
+[32m+[m[32m    return section[m
+[32m+[m[32mend[m
+[32m+[m[32mperiodic_display(r,u)=(vcat(r.x,2.),vcat(u,u[1]))[m
+[32m+[m[32mconst CONDITION_COLORS=("#0072B2","#D55E00","#009E73")[m
+[32m+[m[32mfunction make_plots(directory,a,b,c,convergence)[m
+[32m+[m[32m    p=plot(periodic_display(c,c.u0)...;label="Initial (t = 0)",color=:gray,linestyle=:dash,linewidth=2,[m
+[32m+[m[32m        xlabel="x (dimensionless)",ylabel=c.model==:linear ? "Temperature u (dimensionless)" : "Velocity u (dimensionless)",[m
+[32m+[m[32m        title="$(c.model), t = $(c.t_final)",size=(800,500),ylims=(0.95,2.05),legend=:outerright)[m
+[32m+[m[32m    for ((r,label),color) in zip(((a,"Advection only"),(b,"Diffusion only"),(c,"Combined")),CONDITION_COLORS)[m
+[32m+[m[32m        plot!(p,periodic_display(r,r.u)...;label,color,linestyle=:solid,linewidth=2)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(p,joinpath(directory,"comparison.png"))[m
+[32m+[m[32m    conservation_title=c.model==:linear ? "Temperature integral conservation error" : "Velocity integral conservation error"[m
+[32m+[m[32m    p=plot(;xlabel="t (dimensionless)",ylabel="(I - I0) / 1e-14",size=(800,500),[m
+[32m+[m[32m        title="$conservation_title\n$(c.model): I0 = $(round(c.initial_integral;digits=5)) (dimensionless)",[m
+[32m+[m[32m        titlefontsize=12,legend=:outerright)[m
+[32m+[m[32m    for ((r,label),color) in zip(((a,"Advection only"),(b,"Diffusion only"),(c,"Combined")),CONDITION_COLORS)[m
+[32m+[m[32m        plot!(p,r.times,(r.integral_history.-r.initial_integral)./1e-14;label,color,linestyle=:solid,linewidth=2)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(p,joinpath(directory,"conservation.png"))[m
+[32m+[m[32m    dx=convergence["dx"]; errors=convergence["errors"][m
+[32m+[m[32m    p=plot(dx,errors;label="Combined ($(c.model))",color=CONDITION_COLORS[3],marker=:circle,linewidth=2,[m
+[32m+[m[32m        xscale=:log10,yscale=:log10,xlabel="dx (dimensionless)",ylabel="Maximum absolute error",[m
+[32m+[m[32m        title="Smooth analytic mode, t = 1",size=(800,500),legend=:topleft)[m
+[32m+[m[32m    plot!(p,dx,errors[1].*dx./dx[1];label="First order",color=:black,linestyle=:dot)[m
+[32m+[m[32m    savefig(p,joinpath(directory,"convergence.png"))[m
+[32m+[m[32mend[m
+[32m+[m[32mconst OUTPUT_NAMES=("comparison.png","conservation.png","convergence.png","summary.toml")[m
+[32m+[m[32mfunction check_output_sizes(staged,output_dir,model)[m
+[32m+[m[32m    target=abspath(joinpath(output_dir,string(model)))[m
+[32m+[m[32m    replaced=Set(joinpath(target,n) for n in OUTPUT_NAMES)[m
+[32m+[m[32m    sizes=[filesize(joinpath(staged,n)) for n in OUTPUT_NAMES][m
+[32m+[m[32m    all(s->0<s<=5*1024^2,sizes) || error("N04の1ファイル上限5 MiBを超えています")[m
+[32m+[m[32m    retained=0[m
+[32m+[m[32m    if isdir(output_dir)[m
+[32m+[m[32m        for (root,_,files) in walkdir(output_dir), file in files[m
+[32m+[m[32m            path=abspath(joinpath(root,file))[m
+[32m+[m[32m            path in replaced && continue[m
+[32m+[m[32m            size=filesize(path)[m
+[32m+[m[32m            size<=5*1024^2 || error("1ファイル上限5 MiBを超えています: $path")[m
+[32m+[m[32m            retained+=size[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    sum(sizes)+retained<=10*1024^2 || error("N04全体の上限10 MiBを超えています")[m
+[32m+[m[32m    # Standard course location: account for other assignments' existing results.[m
+[32m+[m[32m    exercises=dirname(@__DIR__)[m
+[32m+[m[32m    total=sum(sizes)+retained[m
+[32m+[m[32m    if basename(exercises)=="exercises" && isdir(exercises)[m
+[32m+[m[32m        for task in readdir(exercises;join=true)[m
+[32m+[m[32m            results=joinpath(task,"results")[m
+[32m+[m[32m            task==(@__DIR__) && continue[m
+[32m+[m[32m            isdir(results) || continue[m
+[32m+[m[32m            for (root,_,files) in walkdir(results), file in files[m
+[32m+[m[32m                total+=filesize(joinpath(root,file))[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    total<=100*1024^2 || error("全課題の出力上限100 MiBを超えています")[m
+[32m+[m[32mend[m
+[32m+[m[32minstall_output(source,destination)=cp(source,destination;force=true)[m
+[32m+[m[32mfunction save_staged(draw,output_dir,model,summary)[m
+[32m+[m[32m    temporary=mktempdir(;cleanup=false)[m
+[32m+[m[32m    preserve_backup=false[m
+[32m+[m[32m    try[m
+[32m+[m[32m        staged=joinpath(temporary,"new"); backup=joinpath(temporary,"backup")[m
+[32m+[m[32m        mkpath(staged); mkpath(backup)[m
+[32m+[m[32m        open(joinpath(staged,"summary.toml"),"w") do io[m
+[32m+[m[32m            TOML.print(io,summary;sorted=true)[m
+[32m+[m[32m        end[m
+[32m+[m[32m        draw(staged)[m
+[32m+[m[32m        check_output_sizes(staged,output_dir,model)[m
+[32m+[m[32m        for n in OUTPUT_NAMES[1:3][m
+[32m+[m[32m            open(joinpath(staged,n)) do io[m
+[32m+[m[32m                read(io,8)==UInt8[0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a] || error("PNG出力が不正です: $n")[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        target=joinpath(output_dir,string(model))[m
+[32m+[m[32m        existing=Set{String}()[m
+[32m+[m[32m        for n in OUTPUT_NAMES[m
+[32m+[m[32m            path=joinpath(target,n)[m
+[32m+[m[32m            ispath(path) && (!isfile(path) || islink(path)) && error("公式出力先は通常ファイルである必要があります: $path")[m
+[32m+[m[32m            if isfile(path)[m
+[32m+[m[32m                cp(path,joinpath(backup,n))[m
+[32m+[m[32m                push!(existing,n)[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        mkpath(target)[m
+[32m+[m[32m        touched=String[][m
+[32m+[m[32m        try[m
+[32m+[m[32m            for n in OUTPUT_NAMES[m
+[32m+[m[32m                push!(touched,n)[m
+[32m+[m[32m                install_output(joinpath(staged,n),joinpath(target,n))[m
+[32m+[m[32m            end[m
+[32m+[m[32m        catch original[m
+[32m+[m[32m            try[m
+[32m+[m[32m                for n in touched[m
+[32m+[m[32m                    destination=joinpath(target,n)[m
+[32m+[m[32m                    if n in existing[m
+[32m+[m[32m                        cp(joinpath(backup,n),destination;force=true)[m
+[32m+[m[32m                    elseif isfile(destination)[m
+[32m+[m[32m                        rm(destination)[m
+[32m+[m[32m                    end[m
+[32m+[m[32m                end[m
+[32m+[m[32m            catch recovery[m
+[32m+[m[32m                preserve_backup=true[m
+[32m+[m[32m                error("出力反映と復元に失敗しました。バックアップ: $backup; 反映: $(sprint(showerror,original)); 復元: $(sprint(showerror,recovery))")[m
+[32m+[m[32m            end[m
+[32m+[m[32m            rethrow(original)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    finally[m
+[32m+[m[32m        preserve_backup || rm(temporary;recursive=true)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_outputs(output_dir,a,b,c,convergence)[m
+[32m+[m[32m    units=c.model==:linear ? "dimensionless temperature; integral is transported temperature content" :[m
+[32m+[m[32m        "dimensionless Burgers velocity; integral is velocity integral, not heat"[m
+[32m+[m[32m    summary=Dict("course_id"=>"N04","model"=>string(c.model),"boundary"=>"periodic","domain"=>[0.,2.],[m
+[32m+[m[32m        "units"=>units,"initial"=>"pulse","t_final"=>c.t_final,"requested_safety"=>c.requested_safety,[m
+[32m+[m[32m        "advection_only"=>summary_section(a),"diffusion_only"=>summary_section(b),[m
+[32m+[m[32m        "combined"=>summary_section(c),"convergence"=>convergence)[m
+[32m+[m[32m    save_staged(output_dir,c.model,summary) do directory[m
+[32m+[m[32m        make_plots(directory,a,b,c,convergence)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N04_advection_diffusion/run.jl b/exercises/N04_advection_diffusion/run.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..1413db3[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N04_advection_diffusion/run.jl[m
+[36m@@ -0,0 +1,108 @@[m
+[32m+[m[32m# N04: SELECTED_MODELを選び、選択流束・合成刻み・周期更新の3か所を実装する。[m
+[32m+[m[32m# 読む順: 流束 → 刻み → 1ステップ → simulate → main。入力検証・解析解・描画は提供済み。[m
+[32m+[m[32mmodule N04AdvectionDiffusion[m
+[32m+[m[32mconst SELECTED_MODEL = :unselected[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32mexport SELECTED_MODEL, advective_flux, stable_timestep, advection_diffusion_step!,[m
+[32m+[m[32m    initial_condition, analytic_solution, conserved_integral, simulate, main[m
+[32m+[m
+[32m+[m[32m"""選択モデルの保存形移流流束。"""[m
+[32m+[m[32mfunction advective_flux(u; model=SELECTED_MODEL, speed=1.0)[m
+[32m+[m[32m    validate_model(model); finite_real(u,"u"); validate_speed(model,speed)[m
+[32m+[m[32m    if model == :linear[m
+[32m+[m[32m        # TODO(N04): 線形を選んだ場合だけ実装する。[m
+[32m+[m[32m        error("未実装 N04: 線形流束を実装してください")[m
+[32m+[m[32m    else[m
+[32m+[m[32m        nonnegative_finite(u,"非線形移流のu")[m
+[32m+[m[32m        # TODO(N04): 非線形を選んだ場合だけ実装する。[m
+[32m+[m[32m        error("未実装 N04: 非線形流束を実装してください")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""C+2Foの合成安定条件を満たす刻み。"""[m
+[32m+[m[32mfunction stable_timestep(max_speed,dx,diffusivity; safety=0.8)[m
+[32m+[m[32m    validate_timestep_inputs(max_speed,dx,diffusivity,safety)[m
+[32m+[m[32m    # TODO(N04): 合成条件から刻みを返す。[m
+[32m+[m[32m    error("未実装 N04: stable_timestepを実装してください")[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""u_oldから周期全点の次の値を計算し、u_newへ書き込む。"""[m
+[32m+[m[32mfunction advection_diffusion_step!(u_new,u_old,dt,dx,diffusivity;[m
+[32m+[m[32m    model=SELECTED_MODEL,advection=true,speed=1.0)[m
+[32m+[m[32m    validate_step(u_new,u_old,dt,dx,diffusivity,model,advection,speed)[m
+[32m+[m[32m    for i in eachindex(u_old)[m
+[32m+[m[32m        # TODO(N04): 周期の左右隣接を使い、移流と拡散を同じ旧配列から足す。[m
+[32m+[m[32m        error("未実装 N04: 周期更新を実装してください")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    return u_new[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""指定最終時刻まで計算し、初期・最終配列、積分履歴、全時刻の診断を返す。[m
+[32m+[m[32mdtを指定した場合は、その値を上限に最終時刻へ合わせて刻みを調整する。[m
+[32m+[m[32m"""[m
+[32m+[m[32mfunction simulate(;model=SELECTED_MODEL,advection=true,nx=80,diffusivity=0.1,[m
+[32m+[m[32m    speed=1.0,safety=0.8,t_final=1.0,initial=:pulse,dt=nothing)[m
+[32m+[m[32m    validate_simulation(model,advection,nx,diffusivity,speed,safety,t_final,initial)[m
+[32m+[m[32m    dx=2.0/nx[m
+[32m+[m[32m    x=[j*dx for j in 0:nx-1][m
+[32m+[m[32m    u0=initial_condition(x;model,initial,diffusivity,speed)[m
+[32m+[m[32m    a=maximum_speed(u0,model,advection,speed)[m
+[32m+[m[32m    nominal_dt=stable_timestep(a,dx,diffusivity;safety)[m
+[32m+[m[32m    positive_finite(nominal_dt,"nominal_dt")[m
+[32m+[m[32m    if !isnothing(dt)[m
+[32m+[m[32m        positive_finite(dt,"dt")[m
+[32m+[m[32m        stability_numbers(a,dt,dx,diffusivity)[m
+[32m+[m[32m        nominal_dt=dt[m
+[32m+[m[32m    end[m
+[32m+[m[32m    count=t_final/nominal_dt[m
+[32m+[m[32m    isfinite(count) && count < typemax(Int)-1 || throw(ArgumentError("ステップ数が表現範囲を超えています"))[m
+[32m+[m[32m    steps=max(1,ceil(Int,count))[m
+[32m+[m[32m    dt=t_final/steps[m
+[32m+[m[32m    positive_finite(dt,"実効dt")[m
+[32m+[m[32m    cfl,fo=stability_numbers(a,dt,dx,diffusivity)[m
+[32m+[m[32m    u_old=copy(u0); u_new=similar(u_old)[m
+[32m+[m[32m    times=collect(range(0.,t_final;length=steps+1))[m
+[32m+[m[32m    integral_history=Vector{Float64}(undef,steps+1)[m
+[32m+[m[32m    initial_integral=conserved_integral(u0,dx)[m
+[32m+[m[32m    integral_history[1]=initial_integral[m
+[32m+[m[32m    low,high=extrema(u0)[m
+[32m+[m[32m    max_cfl=cfl[m
+[32m+[m[32m    for step in 1:steps[m
+[32m+[m[32m        a=maximum_speed(u_old,model,advection,speed)[m
+[32m+[m[32m        cfl,fo=stability_numbers(a,dt,dx,diffusivity)[m
+[32m+[m[32m        advection_diffusion_step!(u_new,u_old,dt,dx,diffusivity;model,advection,speed)[m
+[32m+[m[32m        ensure_finite(u_new,model,step,times[step+1],cfl,fo)[m
+[32m+[m[32m        integral=dx*sum(u_new)[m
+[32m+[m[32m        ensure_finite((integral,),model,step,times[step+1],cfl,fo)[m
+[32m+[m[32m        integral_history[step+1]=integral[m
+[32m+[m[32m        low=min(low,minimum(u_new)); high=max(high,maximum(u_new))[m
+[32m+[m[32m        a=maximum_speed(u_new,model,advection,speed)[m
+[32m+[m[32m        cfl,fo=stability_numbers(a,dt,dx,diffusivity)[m
+[32m+[m[32m        max_cfl=max(max_cfl,cfl)[m
+[32m+[m[32m        u_old,u_new=u_new,u_old[m
+[32m+[m[32m    end[m
+[32m+[m[32m    final_integral=integral_history[end][m
+[32m+[m[32m    integral_change=final_integral-initial_integral[m
+[32m+[m[32m    max_stability_number=max_cfl+2fo[m
+[32m+[m[32m    ensure_finite((integral_change,low,high,max_stability_number),model,steps,t_final,max_cfl,fo)[m
+[32m+[m[32m    return (;x,u0,u=u_old,model,advection,initial,speed,diffusivity,dx,dt,steps,t_final,[m
+[32m+[m[32m        requested_safety=safety,times,integral_history,initial_integral,final_integral,integral_change,[m
+[32m+[m[32m        minimum=low,maximum=high,max_cfl,fo,max_stability_number)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""選択モデルの3条件と解析モードの格子収束をresults/<model>/へ出力する。"""[m
+[32m+[m[32mfunction main(;model=SELECTED_MODEL,output_dir=DEFAULT_OUTPUT_DIR)[m
+[32m+[m[32m    validate_model(model)[m
+[32m+[m[32m    combined=simulate(;model)[m
+[32m+[m[32m    advection_only=simulate(;model,diffusivity=0.,dt=combined.dt)[m
+[32m+[m[32m    diffusion_only=simulate(;model,advection=false,dt=combined.dt)[m
+[32m+[m[32m    convergence=convergence_results(model)[m
+[32m+[m[32m    write_outputs(output_dir,advection_only,diffusion_only,combined,convergence)[m
+[32m+[m[32m    println("N04の出力を書き込みました: $(abspath(joinpath(output_dir,string(model))))")[m
+[32m+[m[32m    return (;advection_only,diffusion_only,combined,convergence)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32mif abspath(PROGRAM_FILE)==@__FILE__[m
+[32m+[m[32m    main()[m
+[32m+[m[32mend[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N04_advection_diffusion/tests.jl b/exercises/N04_advection_diffusion/tests.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..addb8a3[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N04_advection_diffusion/tests.jl[m
+[36m@@ -0,0 +1,45 @@[m
+[32m+[m[32musing Test[m
+[32m+[m[32mif !isdefined(Main,:N04AdvectionDiffusion)[m
+[32m+[m[32m    include(joinpath(@__DIR__,"run.jl"))[m
+[32m+[m[32mend[m
+[32m+[m[32mimport .N04AdvectionDiffusion[m
+[32m+[m[32mconst N04 = N04AdvectionDiffusion[m
+[32m+[m[32mN04.validate_model(N04.SELECTED_MODEL)[m
+[32m+[m[32m@testset "N04 必須テスト" begin[m
+[32m+[m[32m    model=N04.SELECTED_MODEL[m
+[32m+[m[32m    @testset "非対称1ステップ・周期端・旧配列不変" begin[m
+[32m+[m[32m        old=[1.,2.,4.,3.]; saved=copy(old); new=similar(old)[m
+[32m+[m[32m        expected=model==:linear ? [1.26,1.92,3.74,3.08] : [1.46,1.87,3.34,3.33][m
+[32m+[m[32m        @test N04.advection_diffusion_step!(new,old,0.1,1.,0.2) === new[m
+[32m+[m[32m        @test new ≈ expected atol=1e-14[m
+[32m+[m[32m        @test old==saved[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "定数場と周期積分" begin[m
+[32m+[m[32m        old=fill(1.7,5); new=similar(old)[m
+[32m+[m[32m        N04.advection_diffusion_step!(new,old,0.1,1.,0.2)[m
+[32m+[m[32m        @test new ≈ old[m
+[32m+[m[32m        @test N04.conserved_integral([1.,2.,4.,3.],0.5)==5.[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "移流・拡散をゼロにした極限" begin[m
+[32m+[m[32m        old=[1.,2.,4.,3.]; new=similar(old)[m
+[32m+[m[32m        N04.advection_diffusion_step!(new,old,0.1,1.,0.2;advection=false)[m
+[32m+[m[32m        @test new ≈ [1.06,2.02,3.94,2.98][m
+[32m+[m[32m        N04.advection_diffusion_step!(new,old,0.1,1.,0.)[m
+[32m+[m[32m        @test new ≈ (model==:linear ? [1.2,1.9,3.8,3.1] : [1.4,1.85,3.4,3.35])[m
+[32m+[m[32m    end[m
+[32m+[m[32m    @testset "合成刻み・最終時刻・標準安定性" begin[m
+[32m+[m[32m        @test N04.stable_timestep(2.,0.5,0.1) ≈ 1/6[m
+[32m+[m[32m        r=N04.simulate()[m
+[32m+[m[32m        @test r.steps*r.dt ≈ r.t_final == 1.[m
+[32m+[m[32m        @test r.max_stability_number<=0.8+1e-12[m
+[32m+[m[32m        @test all(isfinite,r.u) && 1-1e-12<=r.minimum<=r.maximum<=2+1e-12[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N04 自作テスト" begin[m
+[32m+[m[32m    # TODO(自作): 非対称な非定数配列を複数ステップ進め、周期積分の保存を確認する。[m
+[32m+[m[32m    # 初期積分を独立に計算し、点数・ステップ数・値の大きさから許容誤差を説明する。[m
+[32m+[m[32m    @test false # TODO(N04): 複数ステップ保存[m
+[32m+[m[32m    # TODO(自作): 選択モデルの解析解と40・80・160点の誤差・観測次数を確認する。[m
+[32m+[m[32m    # 誤差の指標、同じ最終時刻、0.8〜1.2の次数範囲、検出できない誤りも説明する。[m
+[32m+[m[32m    @test false # TODO(N04): 格子収束[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/N05.jl b/exercises/N05-N06_common_package_2d_advection/N05.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..537a844[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/N05.jl[m
+[36m@@ -0,0 +1,115 @@[m
+[32m+[m[32mmodule N05Regression[m
+[32m+[m[32musing TOML, SHA[m
+[32m+[m[32mconst ROOT=normpath(joinpath(@__DIR__,"..",".."))[m
+[32m+[m[32mconst DEFAULT_OUTPUT_DIR=joinpath(@__DIR__,"results","N05")[m
+[32m+[m[32mconst DIRECTORIES=("N01_linear_advection","N02_nonlinear_advection","N03_diffusion","N04_advection_diffusion")[m
+[32m+[m[32msha(path)=bytes2hex(sha256(read(path)))[m
+[32m+[m[32mplain(x::NamedTuple)=Dict(string(k)=>plain(v) for (k,v) in pairs(x))[m
+[32m+[m[32mplain(x::AbstractArray)=map(plain,x)[m
+[32m+[m[32mplain(x::Symbol)=string(x)[m
+[32m+[m[32mplain(x)=x[m
+[32m+[m[32mfunction code_hashes(root)[m
+[32m+[m[32m    paths=String[][m
+[32m+[m[32m    for dir in vcat([joinpath(root,"src")],[joinpath(root,"exercises",d) for d in DIRECTORIES])[m
+[32m+[m[32m        for (base,_,names) in walkdir(dir), name in names[m
+[32m+[m[32m            endswith(name,".jl") && push!(paths,joinpath(base,name))[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    Dict(relpath(p,root)=>sha(p) for p in sort(paths))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction capture(root)[m
+[32m+[m[32m    sandbox=Module(gensym(:Baseline))[m
+[32m+[m[32m    for dir in DIRECTORIES[m
+[32m+[m[32m        Base.include(sandbox,joinpath(root,"exercises",dir,"run.jl"))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    Base.invokelatest(capture_loaded,root,sandbox)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction capture_loaded(root,sandbox)[m
+[32m+[m[32m    a,b,c,d=(getfield(sandbox,n) for n in (:N01LinearAdvection,:N02NonlinearAdvection,:N03Diffusion,:N04AdvectionDiffusion))[m
+[32m+[m[32m    # Called in a new process; invokelatest bridges included module definitions.[m
+[32m+[m[32m    call(f;kwargs...)=Base.invokelatest(f;kwargs...)[m
+[32m+[m[32m    model=d.SELECTED_MODEL[m
+[32m+[m[32m    results=Dict{String,Any}()[m
+[32m+[m[32m    for scheme in (:upwind,:centered)[m
+[32m+[m[32m        results["N01_$scheme"]=plain(call(a.simulate;scheme))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    for boundary in (:fixed,:periodic)[m
+[32m+[m[32m        results["N02_$boundary"]=plain(call(b.simulate;boundary,nx=boundary==:fixed ? 81 : 80))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    results["N02_high_cfl"]=plain(call(b.simulate;boundary=:periodic,nx=40,cfl=1.1,t_final=.02))[m
+[32m+[m[32m    for boundary in (:fixed,:insulated), initial in (:pulse,:mode)[m
+[32m+[m[32m        results["N03_$(boundary)_$initial"]=plain(call(c.simulate;boundary,initial))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    results["N03_high_fo"]=plain(call(c.simulate;fo=.6,t_final=.01))[m
+[32m+[m[32m    combined=call(d.simulate;model)[m
+[32m+[m[32m    results["N04_combined"]=plain(combined)[m
+[32m+[m[32m    results["N04_advection"]=plain(call(d.simulate;model,diffusivity=0.,dt=combined.dt))[m
+[32m+[m[32m    results["N04_diffusion"]=plain(call(d.simulate;model,advection=false,dt=combined.dt))[m
+[32m+[m[32m    results["N04_mode"]=plain(call(d.simulate;model,initial=:mode))[m
+[32m+[m[32m    head=try strip(read(`git -C $root rev-parse HEAD`,String)) catch; "unavailable" end[m
+[32m+[m[32m    Dict("schema_version"=>1,"selected_model"=>string(model),"git_head"=>head,"code_sha256"=>code_hashes(root),"results"=>results)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction fresh_capture(root)[m
+[32m+[m[32m    mktempdir() do tmp[m
+[32m+[m[32m        path=joinpath(tmp,"capture.toml")[m
+[32m+[m[32m        command=`$(Base.julia_cmd()) --startup-file=no --project=$root $(@__FILE__) _capture $root $path`[m
+[32m+[m[32m        run(command)[m
+[32m+[m[32m        TOML.parsefile(path)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction compare!(differences,a,b,path="results")[m
+[32m+[m[32m    if a isa AbstractDict[m
+[32m+[m[32m        b isa AbstractDict && Set(keys(a))==Set(keys(b)) || error("N05 キー不一致: $path")[m
+[32m+[m[32m        for k in sort(collect(keys(a))); compare!(differences,a[k],b[k],"$path.$k"); end[m
+[32m+[m[32m    elseif a isa AbstractArray[m
+[32m+[m[32m        b isa AbstractArray && size(a)==size(b) || error("N05 形状不一致: $path")[m
+[32m+[m[32m        for i in eachindex(a); compare!(differences,a[i],b[i],"$path[$i]"); end[m
+[32m+[m[32m    elseif a isa AbstractFloat[m
+[32m+[m[32m        b isa AbstractFloat && isfinite(a) && isfinite(b) && isapprox(a,b;rtol=1e-12,atol=1e-13) || error("N05 数値不一致: $path ($a != $b)")[m
+[32m+[m[32m        differences[path]=abs(a-b)[m
+[32m+[m[32m    else[m
+[32m+[m[32m        typeof(a)==typeof(b) && a==b || error("N05 値不一致: $path ($a != $b)")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_toml(path,data)[m
+[32m+[m[32m    mkpath(dirname(path))[m
+[32m+[m[32m    temporary,io=mktemp(dirname(path))[m
+[32m+[m[32m    try[m
+[32m+[m[32m        TOML.print(io,data;sorted=true); close(io)[m
+[32m+[m[32m        mv(temporary,path;force=true)[m
+[32m+[m[32m    finally[m
+[32m+[m[32m        isopen(io) && close(io)[m
+[32m+[m[32m        isfile(temporary) && rm(temporary)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction baseline(;root=ROOT,output_dir=DEFAULT_OUTPUT_DIR)[m
+[32m+[m[32m    path=joinpath(output_dir,"baseline.toml")[m
+[32m+[m[32m    ispath(path) && error("N05 baselineは上書きできません: $path")[m
+[32m+[m[32m    data=fresh_capture(root)[m
+[32m+[m[32m    ispath(path) && error("N05 baselineが既に存在します: $path")[m
+[32m+[m[32m    write_toml(path,data)[m
+[32m+[m[32m    path[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction verify(;root=ROOT,baseline_path=joinpath(DEFAULT_OUTPUT_DIR,"baseline.toml"),output_dir=DEFAULT_OUTPUT_DIR)[m
+[32m+[m[32m    isfile(baseline_path) || error("N05 baseline欠落: $(baseline_path)。抽出前commitの隔離コピーでN05.jl baselineを実行してください。")[m
+[32m+[m[32m    before=try TOML.parsefile(baseline_path) catch e; error("N05 baseline破損: $baseline_path: $e") end[m
+[32m+[m[32m    get(before,"schema_version",0)==1 || error("N05 baseline schema不一致: $baseline_path")[m
+[32m+[m[32m    now=fresh_capture(root)[m
+[32m+[m[32m    get(before,"selected_model",nothing)==now["selected_model"] || error("N05 N04選択変更: $baseline_path")[m
+[32m+[m[32m    differences=Dict{String,Float64}()[m
+[32m+[m[32m    compare!(differences,before["results"],now["results"])[m
+[32m+[m[32m    report=Dict("schema_version"=>1,"baseline_sha256"=>sha(baseline_path),"code_sha256"=>now["code_sha256"],"git_head"=>now["git_head"],"selected_model"=>now["selected_model"],"differences"=>differences)[m
+[32m+[m[32m    write_toml(joinpath(output_dir,"regression.toml"),report)[m
+[32m+[m[32m    report[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(args=ARGS)[m
+[32m+[m[32m    isempty(args) && return verify()[m
+[32m+[m[32m    args==["baseline"] && return baseline()[m
+[32m+[m[32m    args==["verify"] && return verify()[m
+[32m+[m[32m    if length(args)==3 && args[1]=="_capture"[m
+[32m+[m[32m        return write_toml(args[3],capture(args[2]))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    error("使い方: N05.jl [baseline|verify]")[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/analyze.jl b/exercises/N05-N06_common_package_2d_advection/analyze.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..5130db1[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/analyze.jl[m
+[36m@@ -0,0 +1,18 @@[m
+[32m+[m[32mmodule N06Analysis[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32m"""等幅周期格子の空間分散。未完成はnothing、完成後は有限・非負のFloat64。"""[m
+[32m+[m[32mfunction spatial_variance(u)[m
+[32m+[m[32m    # TODO(N06): 保存場の平均を使って空間分散を求める。[m
+[32m+[m[32m    return nothing[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(;input_path=joinpath(DEFAULT_OUTPUT_DIR,FIELD_NAME),output_dir=DEFAULT_OUTPUT_DIR,variance=spatial_variance,publish_options...)[m
+[32m+[m[32m    data=read_fields(input_path)[m
+[32m+[m[32m    doc=diagnostics(data,variance); doc["source_fields_sha256"]=file_sha(input_path)[m
+[32m+[m[32m    staged(output_dir,("summary.toml",);publish_options...) do stage[m
+[32m+[m[32m        write_toml(joinpath(stage,"summary.toml"),doc)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println(doc["diagnostics_complete"] ? "N06の基本診断と分散を保存しました。plot.jlを再実行してください。" : "N06の基本診断を保存しました。spatial_varianceは未完成です（分散は未保存）。")[m
+[32m+[m[32m    doc[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/learning_log.md b/exercises/N05-N06_common_package_2d_advection/learning_log.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..07967df[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/learning_log.md[m
+[36m@@ -0,0 +1,29 @@[m
+[32m+[m[32m# N05-N06 学習ログ[m
+[32m+[m
+[32m+[m[32m## N05：抽出前の予想とbaseline[m
+[32m+[m
+[32m+[m[32m- 残す挙動・実際の重複・N04選択：[m
+[32m+[m[32m- baselineを取得したcommitと対象コード：[m
+[32m+[m
+[32m+[m[32m## N05：採用したdiffと回帰[m
+[32m+[m
+[32m+[m[32m- 共通APIへ移した処理と、課題に残した処理：[m
+[32m+[m[32m- テスト・代表結果の差とその理由：[m
+[32m+[m[32m- 復帰点を使った場合の採用差分と説明：[m
+[32m+[m
+[32m+[m[32m## N06：二次元更新と数値検証[m
+[32m+[m
+[32m+[m[32m- 軸・周期端・角・方向別寄与・合成CFL：[m
+[32m+[m[32m- 複数ステップの保存量、自作テスト：[m
+[32m+[m[32m- 3格子の誤差・観測次数と考察：[m
+[32m+[m
+[32m+[m[32m## N06：保存場の再解析と再作図[m
+[32m+[m
+[32m+[m[32m- 分散を追加した結果、HDF5の変更前後のSHA-256：[m
+[32m+[m[32m- 表示設定の変更、入力HDF5・summaryのSHA-256：[m
+[32m+[m[32m- 保存されなかった時刻からは求められない量：[m
+[32m+[m
+[32m+[m[32m## 理解度チェック・提出前確認[m
+[32m+[m
+[32m+[m[32m- N05・N06それぞれの理解度チェックと振り返り：[m
+[32m+[m[32m- 実行コマンド、テスト結果、成果物、未解決事項：[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/plot.jl b/exercises/N05-N06_common_package_2d_advection/plot.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..2acca81[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/plot.jl[m
+[36m@@ -0,0 +1,47 @@[m
+[32m+[m[32mmodule N06Plots[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32musing Plots[m
+[32m+[m[32m# 学生の編集対象: 物理条件・診断値を変えずに表示だけを調整する。[m
+[32m+[m[32mconst COLORMAP = :viridis[m
+[32m+[m[32mconst COLOR_LIMITS = (0.4,1.6)[m
+[32m+[m[32mconst DISPLAY_CASE = "n080x060"[m
+[32m+[m[32mfunction draw(stage,data,s;colormap=COLORMAP,color_limits=COLOR_LIMITS,display_case=DISPLAY_CASE)[m
+[32m+[m[32m    require(length(color_limits)==2 && all(isfinite,color_limits) && color_limits[1]<color_limits[2],"色範囲が不正です")[m
+[32m+[m[32m    require(haskey(data.cases,display_case),"表示ケースがありません: $display_case")[m
+[32m+[m[32m    c=data.cases[display_case]; time=last(c["time"]); initial=c["u"][:,:,1]; final=c["u"][:,:,end][m
+[32m+[m[32m    exact=exact_field(c["x"],c["y"],time;cx=data.metadata["cx"],cy=data.metadata["cy"]); error=final-exact[m
+[32m+[m[32m    panels=[][m
+[32m+[m[32m    for (u,title) in ((initial,"Initial, t=0"),(final,"Numerical, t=$time"),(exact,"Exact, t=$time"),(error,"Numerical - exact"))[m
+[32m+[m[32m        iserror=u===error; amplitude=max(maximum(abs,error),eps())[m
+[32m+[m[32m        push!(panels,heatmap(c["x"],c["y"],permutedims(u);xlabel="x",ylabel="y",title,[m
+[32m+[m[32m            color=iserror ? :RdBu : colormap,clims=iserror ? (-amplitude,amplitude) : color_limits,[m
+[32m+[m[32m            xlims=(0.,2.),ylims=(0.,1.),aspect_ratio=:equal))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(plot(panels...;layout=(2,2),size=(1100,660),margin=5Plots.mm),joinpath(stage,"fields.png"))[m
+[32m+[m[32m    mass=plot(;xlabel="Saved time",ylabel="Mass change / 1e-15",legend=:bottomleft)[m
+[32m+[m[32m    errors=plot(;xlabel="Saved time",ylabel="L2 error",legend=:topleft)[m
+[32m+[m[32m    for id in s["convergence"]["case_ids"][m
+[32m+[m[32m        d=s["cases"][id][m
+[32m+[m[32m        plot!(mass,d["time"],(d["mass"].-first(d["mass"]))./1e-15;label=id,marker=:circle)[m
+[32m+[m[32m        plot!(errors,d["time"],d["l2_error"];label=id,marker=:circle)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(plot(mass,errors;layout=(1,2),size=(1000,400),margin=5Plots.mm),joinpath(stage,"diagnostics.png"))[m
+[32m+[m[32m    ids=s["convergence"]["case_ids"]; h=[s["cases"][id]["dx"] for id in ids]; err=s["convergence"]["errors"][m
+[32m+[m[32m    p=plot(h,err;xscale=:log10,yscale=:log10,xlabel="dx (dy refined together)",ylabel="Final L2 error",label="Numerical",marker=:circle,legend=:topleft,size=(700,460))[m
+[32m+[m[32m    plot!(p,h,first(err).*h./first(h);label="First order",linestyle=:dash)[m
+[32m+[m[32m    savefig(p,joinpath(stage,"convergence.png"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(;input_path=joinpath(DEFAULT_OUTPUT_DIR,FIELD_NAME),summary_path=joinpath(DEFAULT_OUTPUT_DIR,"summary.toml"),output_dir=DEFAULT_OUTPUT_DIR,[m
+[32m+[m[32m    colormap=COLORMAP,color_limits=COLOR_LIMITS,display_case=DISPLAY_CASE,publish_options...)[m
+[32m+[m[32m    data=read_fields(input_path); s=read_summary(summary_path,input_path)[m
+[32m+[m[32m    names=("fields.png","diagnostics.png","convergence.png","plots.toml")[m
+[32m+[m[32m    staged(output_dir,names;publish_options...) do stage[m
+[32m+[m[32m        draw(stage,data,s;colormap,color_limits,display_case)[m
+[32m+[m[32m        write_toml(joinpath(stage,"plots.toml"),Dict("schema_version"=>1,"source_fields_sha256"=>file_sha(input_path),[m
+[32m+[m[32m            "source_summary_sha256"=>file_sha(summary_path),"display_case"=>display_case,"time"=>[first(data.cases[display_case]["time"]),last(data.cases[display_case]["time"])],[m
+[32m+[m[32m            "colormap"=>string(colormap),"color_limits"=>collect(color_limits),"error_colormap"=>"RdBu","mass_display_scale"=>1e-15))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N06を保存場から再作図しました。")[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/provided_support.jl b/exercises/N05-N06_common_package_2d_advection/provided_support.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..e6069cc[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/provided_support.jl[m
+[36m@@ -0,0 +1,218 @@[m
+[32m+[m[32m# 提供: 保存・検証・解析解・出力反映。数値更新はsrc/、追加診断はanalyze.jlで実装する。[m
+[32m+[m[32musing HDF5, SHA, TOML[m
+[32m+[m[32mconst DEFAULT_OUTPUT_DIR=joinpath(@__DIR__,"results","N06")[m
+[32m+[m[32mconst FIELD_NAME="fields.h5"[m
+[32m+[m[32mconst OUTPUT_NAMES=("fields.h5","summary.toml","fields.png","diagnostics.png","convergence.png","plots.toml")[m
+[32m+[m[32mconst OFFICIAL_GRIDS=((40,30),(80,60),(160,120))[m
+[32m+[m[32mconst SAVE_TIMES=[0.,.25,.5,.75,1.][m
+[32m+[m[32mconst ROOT_ATTRIBUTES=Dict{String,Any}("schema_version"=>1,"task_id"=>"N06","equation"=>"linear_advection_2d",[m
+[32m+[m[32m    "initial_condition"=>"smooth_periodic_v1","boundary_x"=>"periodic","boundary_y"=>"periodic",[m
+[32m+[m[32m    "cx"=>1.,"cy"=>.5,"Lx"=>2.,"Ly"=>1.,"safety"=>.8,"t_final"=>1.)[m
+[32m+[m[32mfile_sha(path)=bytes2hex(sha256(read(path)))[m
+[32m+[m[32mcase_id(nx,ny)="n$(lpad(nx,3,'0'))x$(lpad(ny,3,'0'))"[m
+[32m+[m[32mu0(x,y)=1+.2sin(pi*x)+.3cos(2pi*y)+.1sin(pi*x+2pi*y)[m
+[32m+[m[32mexact_field(x,y,t;cx=1.,cy=.5)=[u0(mod(xi-cx*t,2.),mod(yj-cy*t,1.)) for xi in x,yj in y][m
+[32m+[m[32mrequire(ok,message)=ok ? nothing : throw(ArgumentError(message))[m
+[32m+[m[32mfunction schedule(times,t_final)[m
+[32m+[m[32m    require(times isa AbstractVector && length(times)>=2,"time: 2時刻以上が必要です")[m
+[32m+[m[32m    require(all(t->t isa Real && isfinite(t),times) && first(times)==0 && last(times)==t_final && all(diff(times).>0),"time: 有限・狭義増加・先頭0・末尾t_finalが必要です")[m
+[32m+[m[32m    Float64.(times)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_toml(path,doc)[m
+[32m+[m[32m    open(io->TOML.print(io,doc;sorted=true),path,"w")[m
+[32m+[m[32mend[m
+[32m+[m[32m"""全出力を生成してから反映する。反映失敗時は既存ファイルを復元する。"""[m
+[32m+[m[32mfunction publish(stage,output_dir,names;copy_file=(a,b)->cp(a,b;force=true),restore_file=(a,b)->cp(a,b;force=true),file_limit=5*1024^2,task_limit=10*1024^2)[m
+[32m+[m[32m    sizes=[filesize(joinpath(stage,n)) for n in names][m
+[32m+[m[32m    require(all(sizes.<=file_limit),"出力の1ファイル上限を超えています")[m
+[32m+[m[32m    # Count retained files as well; combined run uses N05/ and N06/ as separate content IDs.[m
+[32m+[m[32m    totals=Dict{String,Int}()[m
+[32m+[m[32m    group(n)=first(splitpath(n)) in ("N05","N06") ? first(splitpath(n)) : "N06"[m
+[32m+[m[32m    for (n,size) in zip(names,sizes); totals[group(n)]=get(totals,group(n),0)+size; end[m
+[32m+[m[32m    if isdir(output_dir)[m
+[32m+[m[32m        for (dir,_,files) in walkdir(output_dir), file in files[m
+[32m+[m[32m            path=joinpath(dir,file); rel=relpath(path,output_dir)[m
+[32m+[m[32m            rel in names && continue[m
+[32m+[m[32m            key=group(rel); totals[key]=get(totals,key,0)+filesize(path)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    require(all(values(totals).<=task_limit),"出力の内容ID合計上限を超えています")[m
+[32m+[m[32m    backup=mktempdir(;cleanup=false); existed=Dict{String,Bool}(); applied=String[][m
+[32m+[m[32m    try[m
+[32m+[m[32m        for name in names[m
+[32m+[m[32m            target=joinpath(output_dir,name)[m
+[32m+[m[32m            require(!ispath(target) || isfile(target),"出力先が通常ファイルではありません: $target")[m
+[32m+[m[32m            existed[name]=isfile(target)[m
+[32m+[m[32m            if existed[name][m
+[32m+[m[32m                saved=joinpath(backup,name); mkpath(dirname(saved)); cp(target,saved)[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        for name in names[m
+[32m+[m[32m            target=joinpath(output_dir,name); mkpath(dirname(target))[m
+[32m+[m[32m            push!(applied,name) # Include partial writes from a failing copy.[m
+[32m+[m[32m            copy_file(joinpath(stage,name),target)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    catch original[m
+[32m+[m[32m        failures=String[][m
+[32m+[m[32m        for name in reverse(applied)[m
+[32m+[m[32m            target=joinpath(output_dir,name)[m
+[32m+[m[32m            try[m
+[32m+[m[32m                existed[name] ? restore_file(joinpath(backup,name),target) : rm(target;force=true)[m
+[32m+[m[32m            catch e[m
+[32m+[m[32m                push!(failures,"$target: $e")[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        if !isempty(failures)[m
+[32m+[m[32m            error("反映と復元に失敗しました。バックアップ: $backup\n"*join(failures,"\n")*"\n元のエラー: $original")[m
+[32m+[m[32m        end[m
+[32m+[m[32m        rm(backup;recursive=true)[m
+[32m+[m[32m        rethrow()[m
+[32m+[m[32m    end[m
+[32m+[m[32m    rm(backup;recursive=true)[m
+[32m+[m[32m    nothing[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction staged(action,output_dir,names;kwargs...)[m
+[32m+[m[32m    mktempdir() do temporary[m
+[32m+[m[32m        action(temporary)[m
+[32m+[m[32m        publish(temporary,output_dir,names;kwargs...)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_fields(path,cases;metadata=ROOT_ATTRIBUTES)[m
+[32m+[m[32m    h5open(path,"w") do h[m
+[32m+[m[32m        for (k,v) in metadata; attributes(h)[k]=v; end[m
+[32m+[m[32m        group=create_group(h,"cases")[m
+[32m+[m[32m        for (id,c) in sort(collect(cases);by=first)[m
+[32m+[m[32m            g=create_group(group,id)[m
+[32m+[m[32m            for key in ("nx","ny","dx","dy","dt_max"); attributes(g)[key]=c[key]; end[m
+[32m+[m[32m            for key in ("x","y","time","u","segment_dt","segment_steps")[m
+[32m+[m[32m                g[key]=c[key][m
+[32m+[m[32m                key!="segment_steps" && (attributes(g[key])["units"]="1")[m
+[32m+[m[32m            end[m
+[32m+[m[32m            attributes(g["u"])["axis_order"]="time,y,x"[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    # Validate real persisted values before publishing.[m
+[32m+[m[32m    read_fields(path)[m
+[32m+[m[32mend[m
+[32m+[m[32mread_attribute(obj,key)=haskey(attributes(obj),key) ? read(attributes(obj)[key]) : error("必要属性がありません: $key")[m
+[32m+[m[32mfunction validate_case(c,id,meta)[m
+[32m+[m[32m    nx,ny=c["nx"],c["ny"][m
+[32m+[m[32m    require(nx isa Integer && ny isa Integer && nx>=3 && ny>=3,"$id: nx,nyは3以上の整数です")[m
+[32m+[m[32m    require(id==case_id(nx,ny),"$id: ケース名と格子数が不一致です")[m
+[32m+[m[32m    dx,dy=c["dx"],c["dy"][m
+[32m+[m[32m    require(all(v->v isa Real && isfinite(v) && v>0,(dx,dy,c["dt_max"])),"$id: 格子幅・刻み上限が不正です")[m
+[32m+[m[32m    require(isapprox(dx,meta["Lx"]/nx;rtol=1e-13) && isapprox(dy,meta["Ly"]/ny;rtol=1e-13),"$id: 格子幅が領域と不一致です")[m
+[32m+[m[32m    require(c["time"] isa Vector{Float64},"$id/time: Float64配列が必要です")[m
+[32m+[m[32m    time=schedule(c["time"],meta["t_final"]); nt=length(time)[m
+[32m+[m[32m    for (key,n,h) in (("x",nx,dx),("y",ny,dy))[m
+[32m+[m[32m        v=c[key][m
+[32m+[m[32m        require(v isa Vector{Float64} && length(v)==n && all(isfinite,v) && all(isapprox.(v,(0:n-1).*h;rtol=1e-13,atol=1e-14)),"$id/$key: 座標・周期終点・形状が不一致です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    U=c["u"][m
+[32m+[m[32m    require(U isa Array{Float64,3} && size(U)==(nx,ny,nt) && all(isfinite,U),"$id/u: 軸・形状または有限値が不正です")[m
+[32m+[m[32m    dts,steps=c["segment_dt"],c["segment_steps"][m
+[32m+[m[32m    require(dts isa Vector{Float64} && steps isa AbstractVector{<:Integer} && length(dts)==length(steps)==nt-1,"$id: 保存区間の配列形状が不正です")[m
+[32m+[m[32m    require(all(v->isfinite(v)&&v>0,dts) && all(>(0),steps),"$id: 実効刻み・ステップ数が不正です")[m
+[32m+[m[32m    require(all(isapprox.(dts.*steps,diff(time);rtol=1e-13,atol=1e-14)),"$id: 刻み×ステップ数と保存時刻差が不一致です")[m
+[32m+[m[32m    rate=meta["cx"]/dx+meta["cy"]/dy[m
+[32m+[m[32m    require(isapprox(c["dt_max"],meta["safety"]/rate;rtol=1e-13),"$id: dt_maxと条件が不一致です")[m
+[32m+[m[32m    require(all(dts.*rate .<=1+32eps()) && all(dts .<= c["dt_max"]*(1+32eps())),"$id: 合成CFLまたは刻み上限を超えています")[m
+[32m+[m[32m    nothing[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction read_fields(path)[m
+[32m+[m[32m    isfile(path) || error("入力HDF5欠落: $(path)。simulate.jlを実行してください。")[m
+[32m+[m[32m    try[m
+[32m+[m[32m        h5open(path,"r") do h[m
+[32m+[m[32m            meta=Dict(k=>read_attribute(h,k) for k in keys(ROOT_ATTRIBUTES))[m
+[32m+[m[32m            for key in ("schema_version","task_id","equation","initial_condition","boundary_x","boundary_y","Lx","Ly")[m
+[32m+[m[32m                require(meta[key]==ROOT_ATTRIBUTES[key],"root/$key: schema不一致です")[m
+[32m+[m[32m            end[m
+[32m+[m[32m            require(all(v->v isa Real && isfinite(v) && v>=0,(meta["cx"],meta["cy"])) && meta["cx"]+meta["cy"]>0,"root: 速度が不正です")[m
+[32m+[m[32m            require(meta["safety"] isa Real && 0<meta["safety"]<=1 && meta["t_final"] isa Real && isfinite(meta["t_final"]) && meta["t_final"]>0,"root: safety/t_finalが不正です")[m
+[32m+[m[32m            require(haskey(h,"cases") && !isempty(keys(h["cases"])),"casesがありません")[m
+[32m+[m[32m            cases=Dict{String,Any}()[m
+[32m+[m[32m            for id in keys(h["cases"])[m
+[32m+[m[32m                g=h["cases/$id"]; c=Dict{String,Any}(k=>read_attribute(g,k) for k in ("nx","ny","dx","dy","dt_max"))[m
+[32m+[m[32m                for key in ("x","y","time","u","segment_dt","segment_steps")[m
+[32m+[m[32m                    require(haskey(g,key),"$id/$key: dataset欠落")[m
+[32m+[m[32m                    c[key]=read(g[key])[m
+[32m+[m[32m                    key!="segment_steps" && require(read_attribute(g[key],"units")=="1","$id/$key: units不一致")[m
+[32m+[m[32m                end[m
+[32m+[m[32m                require(read_attribute(g["u"],"axis_order")=="time,y,x","$id/u: axis_order不一致")[m
+[32m+[m[32m                validate_case(c,id,meta); cases[id]=c[m
+[32m+[m[32m            end[m
+[32m+[m[32m            (;metadata=meta,cases)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    catch e[m
+[32m+[m[32m        error("HDF5読取り失敗: $(path): $(sprint(showerror,e))")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction diagnostics(data,variance)[m
+[32m+[m[32m    cases=Dict{String,Any}(); complete=true[m
+[32m+[m[32m    for (id,c) in data.cases[m
+[32m+[m[32m        d=Dict{String,Any}(k=>c[k] for k in ("nx","ny","dx","dy","dt_max","time","segment_dt","segment_steps"))[m
+[32m+[m[32m        for key in ("mass","mean","minimum","maximum","l2_error","linf_error","variance"); d[key]=Float64[]; end[m
+[32m+[m[32m        for (k,t) in enumerate(c["time"])[m
+[32m+[m[32m            u=c["u"][:,:,k]; exact=exact_field(c["x"],c["y"],t;cx=data.metadata["cx"],cy=data.metadata["cy"])[m
+[32m+[m[32m            for (key,value) in (("mass",c["dx"]*c["dy"]*sum(u)),("mean",sum(u)/length(u)),("minimum",minimum(u)),("maximum",maximum(u)),("l2_error",sqrt(sum(abs2,u-exact)/length(u))),("linf_error",maximum(abs,u-exact)))[m
+[32m+[m[32m                require(isfinite(value),"$id/$key: 非有限な診断値です"); push!(d[key],value)[m
+[32m+[m[32m            end[m
+[32m+[m[32m            v=variance(u)[m
+[32m+[m[32m            if isnothing(v)[m
+[32m+[m[32m                complete=false[m
+[32m+[m[32m            else[m
+[32m+[m[32m                require(v isa Float64 && isfinite(v) && v>=0,"$id/variance: 有限・非負のFloat64または未完成のnothingが必要です")[m
+[32m+[m[32m                push!(d["variance"],v)[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        cases[id]=d[m
+[32m+[m[32m    end[m
+[32m+[m[32m    if !complete[m
+[32m+[m[32m        for d in values(cases); delete!(d,"variance"); end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    ids=sort(collect(keys(cases));by=id->cases[id]["nx"])[m
+[32m+[m[32m    errors=[last(cases[id]["l2_error"]) for id in ids][m
+[32m+[m[32m    require(all(>(0),errors),"最終誤差は正である必要があります（初期時刻で収束を評価しません）")[m
+[32m+[m[32m    orders=log2.(errors[1:end-1]./errors[2:end])[m
+[32m+[m[32m    Dict{String,Any}("schema_version"=>1,"diagnostics_complete"=>complete,"conditions"=>data.metadata,"cases"=>cases,[m
+[32m+[m[32m        "convergence"=>Dict("case_ids"=>ids,"errors"=>errors,"orders"=>orders))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction read_summary(path,fields)[m
+[32m+[m[32m    isfile(path) || error("解析結果欠落: $(path)。analyze.jlを実行してください。")[m
+[32m+[m[32m    s=try TOML.parsefile(path) catch e; error("解析結果読取り失敗: $(path): $e") end[m
+[32m+[m[32m    require(get(s,"schema_version",0)==1 && get(s,"source_fields_sha256",nothing)==file_sha(fields),"解析結果が現在のHDF5と不一致です: $(path)。analyze.jlを再実行してください。")[m
+[32m+[m[32m    s[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction check_complete(output_dir=DEFAULT_OUTPUT_DIR)[m
+[32m+[m[32m    fields=joinpath(output_dir,"fields.h5"); data=read_fields(fields)[m
+[32m+[m[32m    summary=joinpath(output_dir,"summary.toml"); s=read_summary(summary,fields)[m
+[32m+[m[32m    require(s["diagnostics_complete"],"spatial_varianceが未実装です")[m
+[32m+[m[32m    require(data.metadata==ROOT_ATTRIBUTES,"公式計算条件と不一致です")[m
+[32m+[m[32m    require(Set(keys(data.cases))==Set(case_id(n...) for n in OFFICIAL_GRIDS),"公式3格子が必要です")[m
+[32m+[m[32m    # Fixed official reference values validate the student diagnostic without supplying its algorithm.[m
+[32m+[m[32m    reference_variance=Dict([m
+[32m+[m[32m        "n040x030"=>[.07,.06376010565899816,.05810024176767521,.05296472555517874,.04830334553165218],[m
+[32m+[m[32m        "n080x060"=>[.07,.06680655185569011,.0637652648362681,.06086864410038924,.05810957283257867],[m
+[32m+[m[32m        "n160x120"=>[.07,.06838411939118463,.06680722926541642,.06526835656917583,.06376655312125709],[m
+[32m+[m[32m    )[m
+[32m+[m[32m    expected=diagnostics(data,u->nothing)[m
+[32m+[m[32m    for id in keys(expected["cases"]), key in ("time","mass","mean","minimum","maximum","l2_error","linf_error")[m
+[32m+[m[32m        require(haskey(s["cases"][id],key) && isapprox(s["cases"][id][key],expected["cases"][id][key];rtol=1e-12,atol=1e-13),"$id/$key: 解析結果が保存場と不一致です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    for (id,reference) in reference_variance[m
+[32m+[m[32m        require(haskey(s["cases"][id],"variance") && isapprox(s["cases"][id]["variance"],reference;rtol=1e-12,atol=1e-13),"$id/variance: 公式条件の分散と不一致です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    for c in values(s["cases"])[m
+[32m+[m[32m        require(c["time"]==SAVE_TIMES,"公式保存時刻が必要です")[m
+[32m+[m[32m        require(maximum(abs.(c["mass"].-first(c["mass"])))<=1e-12*max(1.,abs(first(c["mass"]))),"保存量が変化しています")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    conv=s["convergence"][m
+[32m+[m[32m    require(conv["case_ids"]==expected["convergence"]["case_ids"] && isapprox(conv["errors"],expected["convergence"]["errors"];rtol=1e-12) && isapprox(conv["orders"],expected["convergence"]["orders"];rtol=1e-12),"収束診断が保存場と不一致です")[m
+[32m+[m[32m    require(all(diff(conv["errors"]).<0) && all(.8 .<=conv["orders"].<=1.2),"3格子の約1次収束が必要です")[m
+[32m+[m[32m    plots=joinpath(output_dir,"plots.toml")[m
+[32m+[m[32m    isfile(plots) || error("plots.toml欠落。plot.jlを実行してください。")[m
+[32m+[m[32m    p=TOML.parsefile(plots)[m
+[32m+[m[32m    require(p["source_fields_sha256"]==file_sha(fields) && p["source_summary_sha256"]==file_sha(summary),"図の出自が古くなっています。plot.jlを再実行してください。")[m
+[32m+[m[32m    require(all(n->isfile(joinpath(output_dir,n)),OUTPUT_NAMES),"公式出力が不足しています")[m
+[32m+[m[32m    true[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/run.jl b/exercises/N05-N06_common_package_2d_advection/run.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..5c5db76[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/run.jl[m
+[36m@@ -0,0 +1,19 @@[m
+[32m+[m[32mmodule N0506Run[m
+[32m+[m[32minclude("N05.jl")[m
+[32m+[m[32minclude("simulate.jl")[m
+[32m+[m[32minclude("analyze.jl")[m
+[32m+[m[32minclude("plot.jl")[m
+[32m+[m[32mfunction main(;output_dir=joinpath(@__DIR__,"results"),baseline_path=joinpath(output_dir,"N05","baseline.toml"),simulation=N06Simulation.main,analysis=N06Analysis.main,plotting=N06Plots.main,publish_options...)[m
+[32m+[m[32m    mktempdir() do stage[m
+[32m+[m[32m        N05Regression.verify(;baseline_path,output_dir=joinpath(stage,"N05"))[m
+[32m+[m[32m        target=joinpath(stage,"N06")[m
+[32m+[m[32m        simulation(;output_dir=target)[m
+[32m+[m[32m        analysis(;input_path=joinpath(target,"fields.h5"),output_dir=target)[m
+[32m+[m[32m        plotting(;input_path=joinpath(target,"fields.h5"),summary_path=joinpath(target,"summary.toml"),output_dir=target)[m
+[32m+[m[32m        names=vcat([joinpath("N05","regression.toml")],[joinpath("N06",n) for n in N06Simulation.OUTPUT_NAMES])[m
+[32m+[m[32m        N06Simulation.publish(stage,output_dir,names;publish_options...)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N05回帰とN06の全出力を反映しました。baselineは保持しています。")[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/simulate.jl b/exercises/N05-N06_common_package_2d_advection/simulate.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..038d57a[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/simulate.jl[m
+[36m@@ -0,0 +1,32 @@[m
+[32m+[m[32mmodule N06Simulation[m
+[32m+[m[32musing ThermofluidExercise[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32mfunction simulate_case(nx,ny;times=SAVE_TIMES,cx=1.,cy=.5,safety=.8,t_final=1.,stepper=ThermofluidExercise.N06.advection_step!)[m
+[32m+[m[32m    require(nx isa Integer && ny isa Integer && !(nx isa Bool || ny isa Bool) && nx>=3 && ny>=3,"nx,nyは3以上の整数です")[m
+[32m+[m[32m    time=schedule(times,t_final); dx=2/nx; dy=1/ny[m
+[32m+[m[32m    dt_max=ThermofluidExercise.N06.stable_timestep(cx,cy,dx,dy;safety)[m
+[32m+[m[32m    x=collect((0:nx-1).*dx); y=collect((0:ny-1).*dy)[m
+[32m+[m[32m    a=exact_field(x,y,0.;cx,cy); b=similar(a); U=Array{Float64}(undef,nx,ny,length(time)); U[:,:,1]=a[m
+[32m+[m[32m    dts=Float64[]; counts=Int[][m
+[32m+[m[32m    for k in 2:length(time)[m
+[32m+[m[32m        steps,dt=ThermofluidExercise.fit_timestep(dt_max,time[k]-time[k-1])[m
+[32m+[m[32m        push!(dts,dt); push!(counts,steps)[m
+[32m+[m[32m        for step in 1:steps[m
+[32m+[m[32m            stepper(b,a,dt,dx,dy;cx,cy)[m
+[32m+[m[32m            all(isfinite,b) || error("非有限値: case=$(case_id(nx,ny)), step=$step, t=$(time[k-1]+step*dt), CFL=$(cx*dt/dx+cy*dt/dy)")[m
+[32m+[m[32m            a,b=b,a[m
+[32m+[m[32m        end[m
+[32m+[m[32m        U[:,:,k]=a[m
+[32m+[m[32m    end[m
+[32m+[m[32m    Dict{String,Any}("nx"=>nx,"ny"=>ny,"dx"=>dx,"dy"=>dy,"dt_max"=>dt_max,"x"=>x,"y"=>y,"time"=>time,"u"=>U,"segment_dt"=>dts,"segment_steps"=>counts)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(;output_dir=DEFAULT_OUTPUT_DIR,grids=OFFICIAL_GRIDS,times=SAVE_TIMES,stepper=ThermofluidExercise.N06.advection_step!,publish_options...)[m
+[32m+[m[32m    staged(output_dir,(FIELD_NAME,);publish_options...) do stage[m
+[32m+[m[32m        cases=Dict(case_id(nx,ny)=>simulate_case(nx,ny;times,stepper) for (nx,ny) in grids)[m
+[32m+[m[32m        write_fields(joinpath(stage,FIELD_NAME),cases)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N06 fields.h5を保存しました。analyze.jl、plot.jlを順に再実行してください。")[m
+[32m+[m[32m    joinpath(output_dir,FIELD_NAME)[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N05-N06_common_package_2d_advection/tests.jl b/exercises/N05-N06_common_package_2d_advection/tests.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..114c3b3[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N05-N06_common_package_2d_advection/tests.jl[m
+[36m@@ -0,0 +1,43 @@[m
+[32m+[m[32musing Test, ThermofluidExercise[m
+[32m+[m[32m@testset "N05 共通API" begin[m
+[32m+[m[32m    @test ThermofluidExercise.periodic_left_index(1,4)==4[m
+[32m+[m[32m    @test ThermofluidExercise.periodic_right_index(4,4)==1[m
+[32m+[m[32m    @test ThermofluidExercise.linear_flux(2.,3.)==6.[m
+[32m+[m[32m    @test ThermofluidExercise.burgers_flux(-2.)==2.[m
+[32m+[m[32m    @test ThermofluidExercise.fit_timestep(.3,1.)==(steps=4,dt=.25)[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N06 配布済み数値テスト" begin[m
+[32m+[m[32m    old=Float64[1 2 4 3;5 7 6 8;9 10 12 11]; saved=copy(old); new=similar(old)[m
+[32m+[m[32m    N=ThermofluidExercise.N06[m
+[32m+[m[32m    @test N.advection_step!(new,old,.1,.5,.25;cx=1.,cy=.75)===new[m
+[32m+[m[32m    @test new≈[3.2 3.3 5.0 4.9;5.1 5.4 5.9 6.4;8.8 9.1 10.2 10.7] atol=1e-13[m
+[32m+[m[32m    @test old==saved[m
+[32m+[m[32m    @test N.stable_timestep(1.,.75,.5,.25)≈.16[m
+[32m+[m[32m    @test_throws ArgumentError N.advection_step!(old,old,.1,.5,.25)[m
+[32m+[m[32m    @test_throws ArgumentError N.advection_step!(new,old,.21,.5,.25;cx=1.,cy=.75)[m
+[32m+[m[32m    N.advection_step!(new,fill(2.,3,4),.1,.5,.25); @test new==fill(2.,3,4)[m
+[32m+[m[32m    N.advection_step!(new,old,.1,.5,.25;cx=0.,cy=0.); @test new==old[m
+[32m+[m[32m    N.advection_step!(new,old,.1,.5,.25;cx=0.,cy=.75)[m
+[32m+[m[32m    @test new≈[1.6 1.7 3.4 3.3;5.9 6.4 6.3 7.4;9.6 9.7 11.4 11.3][m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N06 自作: 複数ステップの保存量" begin[m
+[32m+[m[32m    # TODO: 非対称・非定数場を複数ステップ進め、保存量を確認する。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N06 自作: 3格子の解析解誤差と収束" begin[m
+[32m+[m[32m    # TODO: 公式3格子で誤差が減少し、両区間が約1次収束することを確認する。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32mend[m
+[32m+[m[32mmodule N0506OutputChecks[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32minclude("N05.jl")[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N05-N06 保存結果と出自" begin[m
+[32m+[m[32m    @test N0506OutputChecks.check_complete()[m
+[32m+[m[32m    baseline=joinpath(@__DIR__,"results","N05","baseline.toml")[m
+[32m+[m[32m    regression=joinpath(@__DIR__,"results","N05","regression.toml")[m
+[32m+[m[32m    @test isfile(baseline) && isfile(regression)[m
+[32m+[m[32m    report=N0506OutputChecks.TOML.parsefile(regression)[m
+[32m+[m[32m    @test report["baseline_sha256"]==N0506OutputChecks.file_sha(baseline)[m
+[32m+[m[32m    @test report["code_sha256"]==N0506OutputChecks.N05Regression.code_hashes(normpath(joinpath(@__DIR__,"..","..")))[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/analyze.jl b/exercises/N07_2d_advection_diffusion/analyze.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..848970a[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/analyze.jl[m
+[36m@@ -0,0 +1,18 @@[m
+[32m+[m[32mmodule N07Analysis[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32m"""辺別の区間積分から熱量変化を再構成する。流入を正とする。"""[m
+[32m+[m[32mfunction heat_budget(time,heat,advective_integrals,diffusive_integrals)[m
+[32m+[m[32m    validate_budget(time,heat,advective_integrals,diffusive_integrals)[m
+[32m+[m[32m    # TODO(N07): 各区間の正味流入、累積流入、初期熱量からの変化との差。[m
+[32m+[m[32m    error("未実装 N07: 熱収支解析")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(;input_dir=DEFAULT_OUTPUT_DIR,output_dir=DEFAULT_OUTPUT_DIR,budget=heat_budget,publish_options...)[m
+[32m+[m[32m    data=read_pair(input_dir);doc=diagnostics(data,budget);doc["source_sha256"]=input_hashes(input_dir)[m
+[32m+[m[32m    staged(output_dir,("summary.toml",);publish_options...) do stage[m
+[32m+[m[32m        write_toml(joinpath(stage,"summary.toml"),doc)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N07の保存場と区間熱輸送を解析しました。plot.jlを再実行してください。")[m
+[32m+[m[32m    doc[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/learning_log.md b/exercises/N07_2d_advection_diffusion/learning_log.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..978b8fe[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/learning_log.md[m
+[36m@@ -0,0 +1,32 @@[m
+[32m+[m[32m# N07 学習ログ[m
+[32m+[m
+[32m+[m[32m## 計算前の予想[m
+[32m+[m
+[32m+[m[32m固定温度と断熱，開境界の温度と総熱量はどう変わるか．[m
+[32m+[m
+[32m+[m[32m## 境界と熱収支[m
+[32m+[m
+[32m+[m[32m半セル距離，内向き正の辺別輸送，入口拡散，移流流出を式・コード・数値で対応づける．[m
+[32m+[m[32m入口・出口での熱輸送が総熱量に与える影響を書く．[m
+[32m+[m[32m収支残差と解析解誤差がそれぞれ評価する性質を書く．[m
+[32m+[m
+[32m+[m[32m## 二成分Burgersと安定条件[m
+[32m+[m
+[32m+[m[32m正負の風上，同じ旧場からの二成分更新，刻みを毎ステップ再評価する理由を書く．[m
+[32m+[m[32m温度の保存形とBurgersの移流形の違いも記す．[m
+[32m+[m
+[32m+[m[32m## 解析解・収束・自作テスト[m
+[32m+[m
+[32m+[m[32m温度3条件とBurgersの誤差・次数，自作2群の入力・期待値・許容値とその根拠を書く．[m
+[32m+[m
+[32m+[m[32m## 結果と来歴[m
+[32m+[m
+[32m+[m[32m公式8出力，再解析・再作図，HDF5 hashの不変性，使った条件と実行環境を記録する．[m
+[32m+[m
+[32m+[m[32m## AI提案の採否[m
+[32m+[m
+[32m+[m[32m採用・修正・却下した提案と，自分で確認した証拠を書く．[m
+[32m+[m
+[32m+[m[32m## LETUS提出状況[m
+[32m+[m
+[32m+[m[32m理解度チェック全文をLETUSへ提出し，提出日を記録する．[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/plot.jl b/exercises/N07_2d_advection_diffusion/plot.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..625604a[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/plot.jl[m
+[36m@@ -0,0 +1,66 @@[m
+[32m+[m[32mmodule N07Plots[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32musing Plots[m
+[32m+[m[32mconst COLORMAP=:viridis[m
+[32m+[m[32mconst COLOR_LIMITS=(0.0,1.6)[m
+[32m+[m[32mconst DISPLAY_GRID="n080x060"[m
+[32m+[m[32mfunction heatpanel(c,a,title;clims=COLOR_LIMITS,color=COLORMAP)[m
+[32m+[m[32m    heatmap(c["x"],c["y"],permutedims(a);title,xlabel="x",ylabel="y",color,clims,xlims=(0.,2.),ylims=(0.,1.),aspect_ratio=:equal,titlefontsize=10)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction draw(stage,pair,s;colormap=COLORMAP,color_limits=COLOR_LIMITS)[m
+[32m+[m[32m    require(length(color_limits)==2 && all(isfinite,color_limits) && color_limits[1]<color_limits[2],"色範囲が不正です")[m
+[32m+[m[32m    temp=pair.temperature.cases;grid=DISPLAY_GRID; panels=[][m
+[32m+[m[32m    for id in ("comparison_advection","comparison_diffusion","comparison_combined")[m
+[32m+[m[32m        c=temp[id][grid];push!(panels,heatpanel(c,c["temperature"][:,:,end],replace(id,"comparison_"=>"")*" T, t=1";clims=color_limits,color=colormap))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(plot(panels...;layout=(3,1),size=(850,830),margin=5Plots.mm),joinpath(stage,"temperature_comparison.png"))[m
+[32m+[m[32m    panels=[][m
+[32m+[m[32m    for id in ("closed_fixed","closed_insulated","channel_fixed","channel_insulated")[m
+[32m+[m[32m        c=temp[id][grid];push!(panels,heatpanel(c,c["temperature"][:,:,end],replace(id,"_"=>" ")*" T";clims=color_limits,color=colormap))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    rates=plot(;title="Boundary transport, inward positive",ylabel="Integrated heat (0 to 1)",legend=:outerright,titlefontsize=10)[m
+[32m+[m[32m    labels=["fixed "*s for s in SIDES];append!(labels,["insulated "*s for s in SIDES])[m
+[32m+[m[32m    av=Float64[];dv=Float64[][m
+[32m+[m[32m    for id in ("channel_fixed","channel_insulated"),side in SIDES[m
+[32m+[m[32m        d=s["cases"][id][grid];push!(av,sum(d["advective_heat_integral"][side]));push!(dv,sum(d["diffusive_heat_integral"][side]))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    scatter!(rates,1:8,av;label="advection",marker=:circle);scatter!(rates,1:8,dv;label="diffusion",marker=:diamond);plot!(rates;xticks=(1:8,labels),xrotation=35,tickfontsize=7)[m
+[32m+[m[32m    budget=plot(;title="Heat change and accumulated inflow",xlabel="time",ylabel="Heat",legend=:topleft,titlefontsize=10)[m
+[32m+[m[32m    residual=plot(;title="Heat-budget residual",xlabel="time",ylabel="Residual / 1e-15",titlefontsize=10)[m
+[32m+[m[32m    for id in ("channel_fixed","channel_insulated")[m
+[32m+[m[32m        d=s["cases"][id][grid];label=replace(id,"channel_"=>"")[m
+[32m+[m[32m        plot!(budget,d["time"],d["heat"].-first(d["heat"]);label=label*" delta Q",marker=:circle)[m
+[32m+[m[32m        plot!(budget,d["time"],d["cumulative_input"];label=label*" inflow",linestyle=:dash,linewidth=2)[m
+[32m+[m[32m        plot!(residual,d["time"],d["residual"]./1e-15;label,marker=:circle)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    push!(panels,rates,budget,residual)[m
+[32m+[m[32m    # Deliberately separated heat, mechanism and residual panels.[m
+[32m+[m[32m    savefig(plot(panels...;layout=@layout([a b; c d; e{0.4h}; f g]),size=(1250,1300),margin=7Plots.mm),joinpath(stage,"boundary_heat.png"))[m
+[32m+[m[32m    c=pair.burgers.cases["periodic_burgers"][grid];ue,ve=exact_burgers(c["x"],c["y"],1.);panels=[][m
+[32m+[m[32m    errors=Dict{String,Any}();field_limits=Dict{String,Any}()[m
+[32m+[m[32m    for (key,exact) in (("u",ue),("v",ve))[m
+[32m+[m[32m        numeric=c[key][:,:,end];amp=max(maximum(abs,numeric-exact),eps());bounds=extrema(vcat(vec(numeric),vec(exact)));errors[key]=[-amp,amp];field_limits[key]=collect(bounds)[m
+[32m+[m[32m        push!(panels,heatpanel(c,numeric,"$key numerical, t=1";clims=bounds,color=colormap),heatpanel(c,exact,"$key exact, t=1";clims=bounds,color=colormap),heatpanel(c,numeric-exact,"$key error";clims=(-amp,amp),color=:RdBu))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(plot(panels...;layout=(2,3),size=(1350,620),margin=5Plots.mm),joinpath(stage,"burgers_fields.png"))[m
+[32m+[m[32m    panels=[][m
+[32m+[m[32m    for id in (PERIODIC_CASES...,"periodic_burgers")[m
+[32m+[m[32m        conv=s["convergence"][id];h=[s["cases"][id][g]["conditions"]["dx"] for g in conv["grid_ids"]];err=conv["errors"];order=id=="periodic_diffusion" ? 2 : 1[m
+[32m+[m[32m        p=plot(h,err;xscale=:log10,yscale=:log10,title=replace(id,"periodic_"=>""),xlabel="dx (dy refined together)",ylabel="Final RMS L2",label="numerical",marker=:circle,legend=:topleft,titlefontsize=10)[m
+[32m+[m[32m        plot!(p,h,first(err).*(h./first(h)).^order;label="order $order",linestyle=:dash);push!(panels,p)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    savefig(plot(panels...;layout=(2,2),size=(1000,760),margin=6Plots.mm),joinpath(stage,"convergence.png"))[m
+[32m+[m[32m    (;errors,field_limits)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(;input_dir=DEFAULT_OUTPUT_DIR,summary_path=joinpath(input_dir,"summary.toml"),output_dir=DEFAULT_OUTPUT_DIR,colormap=COLORMAP,color_limits=COLOR_LIMITS,drawer=draw,publish_options...)[m
+[32m+[m[32m    pair=read_pair(input_dir);s=read_summary(summary_path,input_dir)[m
+[32m+[m[32m    names=("temperature_comparison.png","boundary_heat.png","burgers_fields.png","convergence.png","plots.toml")[m
+[32m+[m[32m    staged(output_dir,names;publish_options...) do stage[m
+[32m+[m[32m        display=drawer(stage,pair,s;colormap,color_limits)[m
+[32m+[m[32m        doc=Dict("schema_version"=>1,"task_id"=>"N07","run_id"=>s["run_id"],"source_sha256"=>input_hashes(input_dir),"source_summary_sha256"=>file_sha(summary_path),"display_grid"=>DISPLAY_GRID,"display_time"=>1.,"cases"=>sort(collect(keys(s["cases"]))),"colormap"=>string(colormap),"temperature_color_limits"=>collect(color_limits),"error_colormap"=>"RdBu","burgers_error_limits"=>display.errors,"burgers_field_limits"=>display.field_limits,"residual_display_scale"=>1e-15,"figure_sha256"=>Dict(n=>file_sha(joinpath(stage,n)) for n in names if endswith(n,".png")))[m
+[32m+[m[32m        write_toml(joinpath(stage,"plots.toml"),doc)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N07を保存データから再作図しました。")[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/provided_support.jl b/exercises/N07_2d_advection_diffusion/provided_support.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..0ebef80[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/provided_support.jl[m
+[36m@@ -0,0 +1,356 @@[m
+[32m+[m[32m# 提供: N07セル中心格子と辺順。計算・保存・解析・作図で共有する。[m
+[32m+[m[32musing HDF5, SHA, TOML[m
+[32m+[m[32mconst DEFAULT_OUTPUT_DIR=joinpath(@__DIR__,"results")[m
+[32m+[m[32mconst OUTPUT_NAMES=("temperature.h5","burgers.h5","summary.toml","temperature_comparison.png","boundary_heat.png","burgers_fields.png","convergence.png","plots.toml")[m
+[32m+[m[32mconst OFFICIAL_GRIDS=((40,30),(80,60),(160,120))[m
+[32m+[m[32mconst SAVE_TIMES=[0.,.25,.5,.75,1.][m
+[32m+[m[32mconst SIDES=("west","east","south","north")[m
+[32m+[m[32mcase_id(nx,ny)="n$(lpad(nx,3,'0'))x$(lpad(ny,3,'0'))"[m
+[32m+[m[32mcell_centers(n,L)=collect(((1:n).-0.5).*(L/n))[m
+[32m+[m
+[32m+[m[32mrequire(ok,msg)=ok ? nothing : throw(ArgumentError(msg))[m
+[32m+[m[32mfunction schedule(time,t_final=1.)[m
+[32m+[m[32m    require(time isa AbstractVector && length(time)>=2 && all(t->t isa Real && isfinite(t),time) && first(time)==0 && last(time)==t_final && all(diff(time).>0),"timeは0始まり・有限・狭義増加・末尾t_finalです")[m
+[32m+[m[32m    Float64.(time)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_budget(time,heat,adv,diff)[m
+[32m+[m[32m    require(time isa AbstractVector && length(time)>=2,"timeは2点以上です")[m
+[32m+[m[32m    schedule(time,last(time)); nt=length(time)[m
+[32m+[m[32m    require(heat isa AbstractVector && length(heat)==nt && all(v->v isa Real && isfinite(v),heat),"heatは時刻に対応する有限列です")[m
+[32m+[m[32m    for a in (adv,diff)[m
+[32m+[m[32m        require(a isa AbstractMatrix && size(a)==(4,nt-1) && all(v->v isa Real && isfinite(v),a),"熱輸送積分は有限な(4,nt-1)配列です")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mconst PERIODIC_CASES=("periodic_advection","periodic_diffusion","periodic_combined")[m
+[32m+[m[32mconst THERMAL_CASES=(PERIODIC_CASES...,"closed_fixed","closed_insulated","channel_fixed","channel_insulated",("comparison_"*split(c,"_")[2] for c in PERIODIC_CASES)...)[m
+[32m+[m[32mfunction thermal_config(id)[m
+[32m+[m[32m    b(k,v=0.)=(;kind=k,value=Float64(v))[m
+[32m+[m[32m    allbc(k)=(;west=b(k),east=b(k),south=b(k),north=b(k))[m
+[32m+[m[32m    require(id in THERMAL_CASES,"未知の温度ケース: $id")[m
+[32m+[m[32m    if startswith(id,"periodic_") || startswith(id,"comparison_")[m
+[32m+[m[32m        mode=split(id,"_")[2]; cx,cy=mode=="diffusion" ? (0.,0.) : (1.,.5)[m
+[32m+[m[32m        return (;cx,cy,kappa=mode=="advection" ? 0. : .05,bc=allbc(:periodic),initial="fourier_v1")[m
+[32m+[m[32m    elseif startswith(id,"closed_")[m
+[32m+[m[32m        return (;cx=0.,cy=0.,kappa=.05,bc=allbc(id=="closed_fixed" ? :dirichlet : :insulated),initial="sine_wall_v1")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    wall=id=="channel_fixed" ? :dirichlet : :insulated[m
+[32m+[m[32m    (;cx=1.,cy=0.,kappa=.05,bc=(;west=b(:inflow,1.),east=b(:outflow),south=b(wall),north=b(wall)),initial="uniform_0.2")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction exact_temperature(x,y,t,id)[m
+[32m+[m[32m    c=thermal_config(id)[m
+[32m+[m[32m    if c.initial=="fourier_v1"[m
+[32m+[m[32m        X=x.-c.cx*t; Y=y.-c.cy*t; k=c.kappa[m
+[32m+[m[32m        return [1+.2exp(-k*pi^2*t)*sin(pi*xi)+.3exp(-4k*pi^2*t)*cos(2pi*yj)+.1exp(-5k*pi^2*t)*sin(pi*xi+2pi*yj) for xi in X,yj in Y][m
+[32m+[m[32m    elseif id=="closed_fixed" || (id=="closed_insulated" && t==0)[m
+[32m+[m[32m        return [sin(pi*xi/2)*sin(pi*yj)*exp(-c.kappa*((pi/2)^2+pi^2)*t) for xi in x,yj in y][m
+[32m+[m[32m    elseif startswith(id,"channel_") && t==0[m
+[32m+[m[32m        return fill(.2,length(x),length(y))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    nothing[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m"""Cole–Hopfの明示微分。X=x-.6t, Y=y+.3t。数値差分で解析値を作らない。"""[m
+[32m+[m[32mfunction exact_burgers(x,y,t;nu=.05)[m
+[32m+[m[32m    X=x.-.6t; Y=y.+.3t; A=.2exp(-nu*pi^2*t); B=.2exp(-4nu*pi^2*t)[m
+[32m+[m[32m    phi=[1+A*cos(pi*xi)+B*cos(2pi*yj) for xi in X,yj in Y][m
+[32m+[m[32m    u=[.6+2nu*A*pi*sin(pi*xi)/phi[i,j] for (i,xi) in enumerate(X),(j,yj) in enumerate(Y)][m
+[32m+[m[32m    v=[-.3+4nu*B*pi*sin(2pi*yj)/phi[i,j] for (i,xi) in enumerate(X),(j,yj) in enumerate(Y)][m
+[32m+[m[32m    u,v[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32mfile_sha(path)=bytes2hex(sha256(read(path)))[m
+[32m+[m[32mwrite_toml(path,doc)=open(io->TOML.print(io,doc;sorted=true),path,"w")[m
+[32m+[m[32mfunction check_course_capacity(output_dir,new_total)[m
+[32m+[m[32m    # Find the actual student's exercises root, including custom nested result files.[m
+[32m+[m[32m    task=dirname(abspath(output_dir)); exercises=dirname(task)[m
+[32m+[m[32m    basename(exercises)=="exercises" || return[m
+[32m+[m[32m    total=new_total[m
+[32m+[m[32m    for entry in readdir(exercises;join=true)[m
+[32m+[m[32m        entry==task && continue[m
+[32m+[m[32m        results=joinpath(entry,"results")[m
+[32m+[m[32m        isdir(results) || continue[m
+[32m+[m[32m        for (dir,_,files) in walkdir(results),name in files;total+=filesize(joinpath(dir,name));end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    legacy=joinpath(dirname(exercises),"results")[m
+[32m+[m[32m    if isdir(legacy)[m
+[32m+[m[32m        for (dir,_,files) in walkdir(legacy),name in files;total+=filesize(joinpath(dir,name));end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    require(total<=100*1024^2,"全課題の100 MiB上限を超えています")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction publish(stage,output_dir,names;copy_file=(a,b)->cp(a,b;force=true),restore_file=(a,b)->cp(a,b;force=true),file_limit=5*1024^2,task_limit=10*1024^2)[m
+[32m+[m[32m    require(all(n->n in OUTPUT_NAMES,names) && length(unique(names))==length(names),"反映できる名前はN07公式出力だけです")[m
+[32m+[m[32m    sizes=[filesize(joinpath(stage,n)) for n in names][m
+[32m+[m[32m    require(all(sizes.<=file_limit),"出力の1ファイル上限を超えています")[m
+[32m+[m[32m    # Include retained user files in the one N07 total.[m
+[32m+[m[32m    totals=Dict{String,Int}()[m
+[32m+[m[32m    group(n)="N07"[m
+[32m+[m[32m    for (n,size) in zip(names,sizes); totals[group(n)]=get(totals,group(n),0)+size; end[m
+[32m+[m[32m    if isdir(output_dir)[m
+[32m+[m[32m        for (dir,_,files) in walkdir(output_dir), file in files[m
+[32m+[m[32m            path=joinpath(dir,file); rel=relpath(path,output_dir)[m
+[32m+[m[32m            rel in names && continue[m
+[32m+[m[32m            require(filesize(path)<=file_limit,"追加ファイルの1ファイル上限を超えています")[m
+[32m+[m[32m            key=group(rel); totals[key]=get(totals,key,0)+filesize(path)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    require(all(values(totals).<=task_limit),"出力の内容ID合計上限を超えています")[m
+[32m+[m[32m    check_course_capacity(output_dir,sum(values(totals)))[m
+[32m+[m[32m    backup=mktempdir(;cleanup=false); existed=Dict{String,Bool}(); applied=String[][m
+[32m+[m[32m    try[m
+[32m+[m[32m        for name in names[m
+[32m+[m[32m            target=joinpath(output_dir,name)[m
+[32m+[m[32m            require(!ispath(target) || isfile(target),"出力先が通常ファイルではありません: $target")[m
+[32m+[m[32m            existed[name]=isfile(target)[m
+[32m+[m[32m            if existed[name][m
+[32m+[m[32m                saved=joinpath(backup,name); mkpath(dirname(saved)); cp(target,saved)[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        for name in names[m
+[32m+[m[32m            target=joinpath(output_dir,name); mkpath(dirname(target))[m
+[32m+[m[32m            push!(applied,name) # Include partial writes from a failing copy.[m
+[32m+[m[32m            copy_file(joinpath(stage,name),target)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    catch original[m
+[32m+[m[32m        failures=String[][m
+[32m+[m[32m        for name in reverse(applied)[m
+[32m+[m[32m            target=joinpath(output_dir,name)[m
+[32m+[m[32m            try[m
+[32m+[m[32m                existed[name] ? restore_file(joinpath(backup,name),target) : rm(target;force=true)[m
+[32m+[m[32m            catch e[m
+[32m+[m[32m                push!(failures,"$target: $e")[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m        if !isempty(failures)[m
+[32m+[m[32m            error("反映と復元に失敗しました。バックアップ: $backup\n"*join(failures,"\n")*"\n元のエラー: $original")[m
+[32m+[m[32m        end[m
+[32m+[m[32m        rm(backup;recursive=true)[m
+[32m+[m[32m        rethrow()[m
+[32m+[m[32m    end[m
+[32m+[m[32m    rm(backup;recursive=true)[m
+[32m+[m[32m    nothing[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction staged(action,output_dir,names;kwargs...)[m
+[32m+[m[32m    mktempdir() do temporary[m
+[32m+[m[32m        action(temporary)[m
+[32m+[m[32m        publish(temporary,output_dir,names;kwargs...)[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32mconst CASE_ATTRIBUTES=("nx","ny","dx","dy","grid_location","cx","cy","kappa","nu","initial_condition","safety","timestep_policy",("$(s)_$(k)" for s in SIDES for k in ("kind","value"))...)[m
+[32m+[m[32mconst ROOT_KEYS=("schema_version","task_id","run_id","equation_family","code_sha256","git_head")[m
+[32m+[m[32mconst COMMON_DATASETS=("x","y","time","step_time","step_dt","save_step_index")[m
+[32m+[m[32mfield_keys(family)=family=="temperature" ? ("temperature",) : ("u","v")[m
+[32m+[m[32mdataset_keys(family)=(COMMON_DATASETS...,field_keys(family)...,(family=="temperature" ? ("advective_heat_integral","diffusive_heat_integral") : ())...)[m
+[32m+[m[32mfunction source_metadata(run_id,family)[m
+[32m+[m[32m    root=normpath(joinpath(@__DIR__,"..",".."))[m
+[32m+[m[32m    paths=vcat([joinpath("src",n) for n in readdir(joinpath(root,"src")) if endswith(n,".jl")],[relpath(joinpath(@__DIR__,n),root) for n in ("simulate.jl","provided_support.jl")])[m
+[32m+[m[32m    hashes=Dict(n=>file_sha(joinpath(root,n)) for n in paths)[m
+[32m+[m[32m    code=sprint(io->TOML.print(io,hashes;sorted=true))[m
+[32m+[m[32m    head=try readchomp(pipeline(`git -C $root rev-parse HEAD`;stderr=devnull)) catch; "unversioned" end[m
+[32m+[m[32m    Dict{String,Any}("schema_version"=>1,"task_id"=>"N07","run_id"=>run_id,"equation_family"=>family,"code_sha256"=>code,"git_head"=>head)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction grids_for(id)[m
+[32m+[m[32m    id in PERIODIC_CASES || id=="periodic_burgers" ? OFFICIAL_GRIDS : ((80,60),)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction expected_cases(family)[m
+[32m+[m[32m    Dict(id=>Set(case_id(n...) for n in grids_for(id)) for id in (family=="temperature" ? THERMAL_CASES : ("periodic_burgers",)))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction case_metadata(id,nx,ny)[m
+[32m+[m[32m    b=id=="periodic_burgers"[m
+[32m+[m[32m    c=b ? (;cx=.6,cy=-.3,kappa=0.,bc=thermal_config("periodic_advection").bc,initial="cole_hopf_v1") : thermal_config(id)[m
+[32m+[m[32m    doc=Dict{String,Any}("nx"=>nx,"ny"=>ny,"dx"=>2/nx,"dy"=>1/ny,"grid_location"=>"cell_center","cx"=>c.cx,"cy"=>c.cy,"kappa"=>c.kappa,"nu"=>b ? .05 : 0.,"initial_condition"=>c.initial,"safety"=>.8,"timestep_policy"=>b ? "dynamic_old_field" : startswith(id,"comparison_") ? "common_combined" : "case_stable")[m
+[32m+[m[32m    for side in SIDES[m
+[32m+[m[32m        v=getproperty(c.bc,Symbol(side));doc[side*"_kind"]=string(v.kind);doc[side*"_value"]=v.value[m
+[32m+[m[32m    end[m
+[32m+[m[32m    doc[m
+[32m+[m[32mend[m
+[32m+[m[32mread_attribute(o,k)=haskey(attributes(o),k) ? read(attributes(o)[k]) : throw(ArgumentError("必要属性がありません: $k"))[m
+[32m+[m[32mfunction validate_case(c,id,grid,family)[m
+[32m+[m[32m    nx,ny=c["nx"],c["ny"][m
+[32m+[m[32m    require(nx isa Integer && ny isa Integer && nx>=3 && ny>=3 && grid==case_id(nx,ny),"$id/$grid: 格子数が不正です")[m
+[32m+[m[32m    expected=case_metadata(id,nx,ny)[m
+[32m+[m[32m    require(all(c[k]==expected[k] for k in CASE_ATTRIBUTES),"$id: 境界・係数・格子配置・刻み方針が不一致です")[m
+[32m+[m[32m    for (key,n,L) in (("x",nx,2.),("y",ny,1.))[m
+[32m+[m[32m        require(c[key] isa Vector{Float64} && length(c[key])==n && all(isfinite,c[key]) && isapprox(c[key],cell_centers(n,L);rtol=1e-13,atol=1e-14),"$id/$key: セル中心座標が不正です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    time=schedule(c["time"]);require(time==SAVE_TIMES,"公式保存時刻が不一致です"); nt=length(time)[m
+[32m+[m[32m    for key in field_keys(family)[m
+[32m+[m[32m        require(c[key] isa Array{Float64,3} && size(c[key])==(nx,ny,nt) && all(isfinite,c[key]),"$id/$key: shape・有限値が不正です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    ts,dt,idx=c["step_time"],c["step_dt"],c["save_step_index"][m
+[32m+[m[32m    require(ts isa Vector{Float64} && dt isa Vector{Float64} && length(ts)==length(dt)>0 && all(isfinite,ts) && all(v->isfinite(v)&&v>0,dt),"$id: step配列が不正です")[m
+[32m+[m[32m    require(first(ts)==0 && all(diff(ts).>0) && all(isapprox.(ts[2:end],ts[1:end-1]+dt[1:end-1];atol=1e-13,rtol=1e-13)),"$id: step時刻とdtが不一致です")[m
+[32m+[m[32m    require(idx isa AbstractVector{<:Integer} && length(idx)==nt && first(idx)==0 && last(idx)==length(dt) && all(diff(idx).>0),"$id: 保存step対応が不正です")[m
+[32m+[m[32m    require(all(isapprox(time[k],ts[idx[k]]+dt[idx[k]];atol=1e-13,rtol=1e-13) for k in 2:nt),"$id: 保存時刻とstepが不一致です")[m
+[32m+[m[32m    if family=="temperature"[m
+[32m+[m[32m        for key in ("advective_heat_integral","diffusive_heat_integral")[m
+[32m+[m[32m            require(c[key] isa Matrix{Float64} && size(c[key])==(4,nt-1) && all(isfinite,c[key]),"$id/$key: 辺・区間・有限値が不正です")[m
+[32m+[m[32m        end[m
+[32m+[m[32m        # Independent metadata stability check; no numerical package is imported for reading.[m
+[32m+[m[32m        ax=any(c[s*"_kind"] in ("dirichlet","inflow") for s in ("west","east")) ? 3 : 2[m
+[32m+[m[32m        ay=any(c[s*"_kind"] in ("dirichlet","inflow") for s in ("south","north")) ? 3 : 2[m
+[32m+[m[32m        rate=abs(c["cx"])/c["dx"]+abs(c["cy"])/c["dy"]+c["kappa"]*(ax/c["dx"]^2+ay/c["dy"]^2)[m
+[32m+[m[32m        startswith(id,"comparison_") && (rate=1/c["dx"]+.5/c["dy"]+.1*(1/c["dx"]^2+1/c["dy"]^2))[m
+[32m+[m[32m        require(all(dt.*rate .<=.8+32eps()),"$id: 安定刻み超過です")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction write_fields(path,cases,meta;official=true)[m
+[32m+[m[32m    family=meta["equation_family"][m
+[32m+[m[32m    h5open(path,"w") do h[m
+[32m+[m[32m        for (k,v) in meta;attributes(h)[k]=v;end[m
+[32m+[m[32m        cg=create_group(h,"cases")[m
+[32m+[m[32m        for (id,grids) in sort(collect(cases);by=first)[m
+[32m+[m[32m            ig=create_group(cg,id)[m
+[32m+[m[32m            for (grid,c) in sort(collect(grids);by=first)[m
+[32m+[m[32m                g=create_group(ig,grid)[m
+[32m+[m[32m                for k in CASE_ATTRIBUTES;attributes(g)[k]=c[k];end[m
+[32m+[m[32m                for k in dataset_keys(family)[m
+[32m+[m[32m                    g[k]=c[k][m
+[32m+[m[32m                    k!="save_step_index" && (attributes(g[k])["units"]="1")[m
+[32m+[m[32m                    k in field_keys(family) && (attributes(g[k])["axis_order"]="time,y,x")[m
+[32m+[m[32m                    if endswith(k,"heat_integral")[m
+[32m+[m[32m                        attributes(g[k])["axis_order"]="interval,side";attributes(g[k])["side_order"]="west,east,south,north";attributes(g[k])["positive_direction"]="inward"[m
+[32m+[m[32m                    end[m
+[32m+[m[32m                end[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    read_fields(path;official)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction read_fields(path;official=true)[m
+[32m+[m[32m    isfile(path) || error("HDF5欠落: $(path)。simulate.jlを実行してください")[m
+[32m+[m[32m    try[m
+[32m+[m[32m        h5open(path,"r") do h[m
+[32m+[m[32m            meta=Dict(k=>read_attribute(h,k) for k in ROOT_KEYS); family=meta["equation_family"][m
+[32m+[m[32m            require(meta["schema_version"]==1 && meta["task_id"]=="N07" && family in ("temperature","burgers"),"root schema不一致")[m
+[32m+[m[32m            require(meta["run_id"] isa String && occursin(r"^[0-9a-f]{32}$",meta["run_id"]),"run_id不正")[m
+[32m+[m[32m            hashes=TOML.parse(meta["code_sha256"])[m
+[32m+[m[32m            require(!isempty(hashes) && all(v->v isa String && occursin(r"^[0-9a-f]{64}$",v),values(hashes)) && meta["git_head"] isa String && !isempty(meta["git_head"]),"コード来歴が不正です")[m
+[32m+[m[32m            require(haskey(h,"cases"),"cases欠落");cases=Dict{String,Any}()[m
+[32m+[m[32m            for id in keys(h["cases"])[m
+[32m+[m[32m                require(id in keys(expected_cases(family)),"未知ケースです: $id")[m
+[32m+[m[32m                grids=Dict{String,Any}()[m
+[32m+[m[32m                for grid in keys(h["cases/$id"])[m
+[32m+[m[32m                    g=h["cases/$id/$grid"]; c=Dict{String,Any}(k=>read_attribute(g,k) for k in CASE_ATTRIBUTES)[m
+[32m+[m[32m                    for k in dataset_keys(family)[m
+[32m+[m[32m                        require(haskey(g,k),"$id/$grid/$(k)欠落");c[k]=read(g[k])[m
+[32m+[m[32m                        k!="save_step_index" && require(read_attribute(g[k],"units")=="1","units不一致")[m
+[32m+[m[32m                        k in field_keys(family) && require(read_attribute(g[k],"axis_order")=="time,y,x","場の軸不一致")[m
+[32m+[m[32m                        if endswith(k,"heat_integral")[m
+[32m+[m[32m                            require(read_attribute(g[k],"axis_order")=="interval,side" && read_attribute(g[k],"side_order")=="west,east,south,north" && read_attribute(g[k],"positive_direction")=="inward","熱輸送の軸・辺順・符号が不一致")[m
+[32m+[m[32m                        end[m
+[32m+[m[32m                    end[m
+[32m+[m[32m                    validate_case(c,id,grid,family);grids[grid]=c[m
+[32m+[m[32m                end[m
+[32m+[m[32m                cases[id]=grids[m
+[32m+[m[32m            end[m
+[32m+[m[32m            if official[m
+[32m+[m[32m                expected=expected_cases(family)[m
+[32m+[m[32m                require(Set(keys(cases))==Set(keys(expected)) && all(Set(keys(cases[id]))==expected[id] for id in keys(expected)),"公式ケース・格子が不足しています")[m
+[32m+[m[32m            end[m
+[32m+[m[32m            (;metadata=meta,cases)[m
+[32m+[m[32m        end[m
+[32m+[m[32m    catch e[m
+[32m+[m[32m        error("HDF5読取り失敗 $path: $(sprint(showerror,e))")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction read_pair(dir)[m
+[32m+[m[32m    t=read_fields(joinpath(dir,"temperature.h5")); b=read_fields(joinpath(dir,"burgers.h5"))[m
+[32m+[m[32m    require(t.metadata["equation_family"]=="temperature" && b.metadata["equation_family"]=="burgers","HDF5の方程式系が不一致")[m
+[32m+[m[32m    for k in ("run_id","code_sha256","git_head");require(t.metadata[k]==b.metadata[k],"HDF5の計算由来が混在しています: $k");end[m
+[32m+[m[32m    (;temperature=t,burgers=b)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction input_hashes(dir)[m
+[32m+[m[32m    Dict(n=>file_sha(joinpath(dir,n)) for n in ("temperature.h5","burgers.h5"))[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32mfunction diagnostics(pair,budget)[m
+[32m+[m[32m    cases=Dict{String,Any}();convergence=Dict{String,Any}()[m
+[32m+[m[32m    for (family,data) in (("temperature",pair.temperature),("burgers",pair.burgers))[m
+[32m+[m[32m        for (id,grids) in data.cases[m
+[32m+[m[32m            ds=Dict{String,Any}()[m
+[32m+[m[32m            for (grid,c) in grids[m
+[32m+[m[32m                d=Dict{String,Any}("conditions"=>Dict(k=>c[k] for k in CASE_ATTRIBUTES),"time"=>c["time"],"step_count"=>length(c["step_dt"]),"dt_min"=>minimum(c["step_dt"]),"dt_max"=>maximum(c["step_dt"]))[m
+[32m+[m[32m                if family=="temperature"[m
+[32m+[m[32m                    U=c["temperature"];d["heat"]=[c["dx"]*c["dy"]*sum(@view U[:,:,k]) for k in eachindex(c["time"])][m
+[32m+[m[32m                    for (key,fun) in (("minimum",minimum),("maximum",maximum));d[key]=[fun(@view U[:,:,k]) for k in eachindex(c["time"])];end[m
+[32m+[m[32m                    adv=c["advective_heat_integral"];diff=c["diffusive_heat_integral"][m
+[32m+[m[32m                    b=budget(c["time"],d["heat"],adv,diff)[m
+[32m+[m[32m                    for (k,v) in pairs(b);require(all(isfinite,v),"$id: 非有限な熱収支診断です");d[string(k)]=v;end[m
+[32m+[m[32m                    d["advective_heat_integral"]=Dict(side=>collect(adv[j,:]) for (j,side) in enumerate(SIDES))[m
+[32m+[m[32m                    d["diffusive_heat_integral"]=Dict(side=>collect(diff[j,:]) for (j,side) in enumerate(SIDES))[m
+[32m+[m[32m                    if id in PERIODIC_CASES || startswith(id,"comparison_") || id=="closed_fixed"[m
+[32m+[m[32m                        d["l2_error"]=[sqrt(sum(abs2,U[:,:,k]-exact_temperature(c["x"],c["y"],t,id))/(c["nx"]*c["ny"])) for (k,t) in enumerate(c["time"])][m
+[32m+[m[32m                    end[m
+[32m+[m[32m                else[m
+[32m+[m[32m                    for component in ("u","v")[m
+[32m+[m[32m                        U=c[component];d[component*"_minimum"]=[minimum(@view U[:,:,k]) for k in eachindex(c["time"])];d[component*"_maximum"]=[maximum(@view U[:,:,k]) for k in eachindex(c["time"])];d[component*"_l2_error"]=Float64[][m
+[32m+[m[32m                    end[m
+[32m+[m[32m                    for (k,t) in enumerate(c["time"])[m
+[32m+[m[32m                        ue,ve=exact_burgers(c["x"],c["y"],t)[m
+[32m+[m[32m                        for (key,exact) in (("u",ue),("v",ve));push!(d[key*"_l2_error"],sqrt(sum(abs2,c[key][:,:,k]-exact)/length(exact)));end[m
+[32m+[m[32m                    end[m
+[32m+[m[32m                    d["l2_error"]=hypot.(d["u_l2_error"],d["v_l2_error"])[m
+[32m+[m[32m                end[m
+[32m+[m[32m                ds[grid]=d[m
+[32m+[m[32m            end[m
+[32m+[m[32m            cases[id]=ds[m
+[32m+[m[32m            if id in PERIODIC_CASES || id=="periodic_burgers"[m
+[32m+[m[32m                ids=sort(collect(keys(ds));by=g->ds[g]["conditions"]["nx"])[m
+[32m+[m[32m                errors=[last(ds[g]["l2_error"]) for g in ids][m
+[32m+[m[32m                require(all(v->isfinite(v)&&v>0,errors),"最終誤差が不正です")[m
+[32m+[m[32m                convergence[id]=Dict("grid_ids"=>ids,"errors"=>errors,"orders"=>log2.(errors[1:end-1]./errors[2:end]))[m
+[32m+[m[32m            end[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    Dict{String,Any}("schema_version"=>1,"task_id"=>"N07","run_id"=>pair.temperature.metadata["run_id"],"diagnostics_complete"=>true,"provenance"=>pair.temperature.metadata,"cases"=>cases,"convergence"=>convergence)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction read_summary(path,input_dir)[m
+[32m+[m[32m    require(isfile(path),"summary欠落。analyze.jlを実行してください")[m
+[32m+[m[32m    s=TOML.parsefile(path);data=read_pair(input_dir)[m
+[32m+[m[32m    require(get(s,"schema_version",0)==1 && get(s,"task_id","")=="N07" && get(s,"source_sha256",nothing)==input_hashes(input_dir) && get(s,"run_id",nothing)==data.temperature.metadata["run_id"],"summaryの出自がHDF5と不一致です。analyze.jlを再実行してください")[m
+[32m+[m[32m    require(get(s,"diagnostics_complete",false)===true,"熱収支解析が未完了です")[m
+[32m+[m[32m    require(haskey(s,"cases") && Set(keys(s["cases"]))==union(Set(keys(data.temperature.cases)),Set(keys(data.burgers.cases))),"summaryのケースが不足しています")[m
+[32m+[m[32m    s[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction check_complete(output_dir=DEFAULT_OUTPUT_DIR)[m
+[32m+[m[32m    pair=read_pair(output_dir);s=read_summary(joinpath(output_dir,"summary.toml"),output_dir)[m
+[32m+[m[32m    for (id,conv) in s["convergence"][m
+[32m+[m[32m        expected=grids_for(id);require(length(conv["errors"])==length(expected)==3,"3格子が必要です")[m
+[32m+[m[32m        errors=conv["errors"];p=conv["orders"];lo,hi=id=="periodic_diffusion" ? (1.8,2.2) : (.8,1.2)[m
+[32m+[m[32m        require(all(diff(errors).<0) && length(p)==2 && all(lo .<= p .<= hi) && isapprox(p,log2.(errors[1:2]./errors[2:3]);rtol=1e-12),"$id: 収束基準を満たしません")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    require(Set(keys(s["convergence"]))==Set((PERIODIC_CASES...,"periodic_burgers")),"収束条件が不足しています")[m
+[32m+[m[32m    # Verify student diagnostics against persisted inputs, without rerunning a solver.[m
+[32m+[m[32m    for (id,grids) in pair.temperature.cases, (grid,c) in grids[m
+[32m+[m[32m        d=s["cases"][id][grid];q=[c["dx"]*c["dy"]*sum(@view c["temperature"][:,:,k]) for k in eachindex(c["time"])][m
+[32m+[m[32m        transport=sum(abs,c["advective_heat_integral"])+sum(abs,c["diffusive_heat_integral"])[m
+[32m+[m[32m        tol=1e-12*max(1,abs(first(q)),transport)[m
+[32m+[m[32m        require(isapprox(d["heat"],q;rtol=1e-13,atol=1e-14),"$id: 熱量が保存場と不一致です")[m
+[32m+[m[32m        require(length(d["residual"])==length(q) && maximum(abs,d["residual"])<=tol && isapprox(q.-first(q),d["cumulative_input"]+d["residual"];atol=tol,rtol=0),"$id: 熱収支が不一致です")[m
+[32m+[m[32m        require(first(d["cumulative_input"])==0 && isapprox(diff(d["cumulative_input"]),d["net_input"];rtol=1e-12,atol=tol),"$id: 区間と累積収支が不一致です")[m
+[32m+[m[32m        for k in eachindex(d["net_input"])[m
+[32m+[m[32m            require(isapprox(d["net_input"][k],sum(c["advective_heat_integral"][:,k])+sum(c["diffusive_heat_integral"][:,k]);atol=tol,rtol=0),"$id: 境界輸送と不一致です")[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    # Recompute the analytic error from stored fields; a small heat residual alone is insufficient.[m
+[32m+[m[32m    for id in (PERIODIC_CASES...,"periodic_burgers")[m
+[32m+[m[32m        data=id=="periodic_burgers" ? pair.burgers : pair.temperature[m
+[32m+[m[32m        conv=s["convergence"][id][m
+[32m+[m[32m        for (k,grid) in enumerate(conv["grid_ids"])[m
+[32m+[m[32m            c=data.cases[id][grid][m
+[32m+[m[32m            if id=="periodic_burgers"[m
+[32m+[m[32m                u,v=exact_burgers(c["x"],c["y"],1.);e=sqrt((sum(abs2,c["u"][:,:,end]-u)+sum(abs2,c["v"][:,:,end]-v))/length(u))[m
+[32m+[m[32m            else[m
+[32m+[m[32m                u=exact_temperature(c["x"],c["y"],1.,id);e=sqrt(sum(abs2,c["temperature"][:,:,end]-u)/length(u))[m
+[32m+[m[32m            end[m
+[32m+[m[32m            require(isapprox(conv["errors"][k],e;rtol=1e-12),"$id: 解析解誤差が保存場と不一致です")[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32m    path=joinpath(output_dir,"plots.toml");require(isfile(path),"plots.toml欠落")[m
+[32m+[m[32m    p=TOML.parsefile(path)[m
+[32m+[m[32m    require(p["source_sha256"]==input_hashes(output_dir) && p["source_summary_sha256"]==file_sha(joinpath(output_dir,"summary.toml")),"図の出自が不一致です。plot.jlを再実行してください")[m
+[32m+[m[32m    require(all(n->isfile(joinpath(output_dir,n)),OUTPUT_NAMES),"公式8出力が不足しています")[m
+[32m+[m[32m    require(all(file_sha(joinpath(output_dir,n))==p["figure_sha256"][n] for n in keys(p["figure_sha256"])) && Set(keys(p["figure_sha256"]))==Set(n for n in OUTPUT_NAMES if endswith(n,".png")),"図が記録と不一致です")[m
+[32m+[m[32m    true[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/run.jl b/exercises/N07_2d_advection_diffusion/run.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..8bc0db8[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/run.jl[m
+[36m@@ -0,0 +1,16 @@[m
+[32m+[m[32mmodule N07Run[m
+[32m+[m[32minclude("simulate.jl")[m
+[32m+[m[32minclude("analyze.jl")[m
+[32m+[m[32minclude("plot.jl")[m
+[32m+[m[32mfunction main(;output_dir=N07Simulation.DEFAULT_OUTPUT_DIR,simulation=N07Simulation.main,analysis=N07Analysis.main,plotting=N07Plots.main,publish_options...)[m
+[32m+[m[32m    mktempdir() do stage[m
+[32m+[m[32m        simulation(;output_dir=stage)[m
+[32m+[m[32m        analysis(;input_dir=stage,output_dir=stage)[m
+[32m+[m[32m        plotting(;input_dir=stage,output_dir=stage)[m
+[32m+[m[32m        N07Simulation.check_complete(stage)[m
+[32m+[m[32m        N07Simulation.publish(stage,output_dir,N07Simulation.OUTPUT_NAMES;publish_options...)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N07の公式8出力をまとめて反映しました。")[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/simulate.jl b/exercises/N07_2d_advection_diffusion/simulate.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..ea63c2b[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/simulate.jl[m
+[36m@@ -0,0 +1,60 @@[m
+[32m+[m[32mmodule N07Simulation[m
+[32m+[m[32musing ThermofluidExercise[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32mconst N=ThermofluidExercise.N07[m
+[32m+[m[32mfunction simulate_case(id,nx,ny;times=SAVE_TIMES,thermal_step=N.thermal_step!,burgers_step=N.burgers_step!,burgers_timestep=N.burgers_stable_timestep)[m
+[32m+[m[32m    require(nx isa Integer && ny isa Integer && !(nx isa Bool || ny isa Bool) && nx>=3 && ny>=3,"各軸3以上の整数が必要です")[m
+[32m+[m[32m    time=schedule(times); c=case_metadata(id,nx,ny);dx,dy=c["dx"],c["dy"];x=cell_centers(nx,2.);y=cell_centers(ny,1.);isburgers=id=="periodic_burgers"[m
+[32m+[m[32m    a,v=isburgers ? exact_burgers(x,y,0.) : (exact_temperature(x,y,0.,id),nothing)[m
+[32m+[m[32m    b=similar(a);w=isburgers ? similar(v) : nothing; nt=length(time)[m
+[32m+[m[32m    U=Array{Float64}(undef,nx,ny,nt);U[:,:,1]=a[m
+[32m+[m[32m    V=isburgers ? similar(U) : nothing;isburgers && (V[:,:,1]=v)[m
+[32m+[m[32m    adv=zeros(4,nt-1);diff=zeros(4,nt-1);step_time=Float64[];step_dt=Float64[];indices=[0];t=0.[m
+[32m+[m[32m    config=isburgers ? nothing : thermal_config(id)[m
+[32m+[m[32m    dtmax=isburgers ? NaN : N.thermal_stable_timestep(config.cx,config.cy,config.kappa,dx,dy,config.bc)[m
+[32m+[m[32m    if startswith(id,"comparison_")[m
+[32m+[m[32m        ref=thermal_config("periodic_combined");dtmax=N.thermal_stable_timestep(ref.cx,ref.cy,ref.kappa,dx,dy,ref.bc)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    for k in 2:nt[m
+[32m+[m[32m        target=time[k][m
+[32m+[m[32m        while t<target[m
+[32m+[m[32m            dt=min(isburgers ? burgers_timestep(a,v,.05,dx,dy) : dtmax,target-t)[m
+[32m+[m[32m            require(dt isa Real && isfinite(dt) && dt>0 && t+dt>t,"$id t=$t: 時間が進まないdtです")[m
+[32m+[m[32m            try[m
+[32m+[m[32m                if isburgers[m
+[32m+[m[32m                    burgers_step(b,w,a,v,dt,dx,dy;nu=.05)[m
+[32m+[m[32m                    require(all(isfinite,b) && all(isfinite,w),"非有限速度です")[m
+[32m+[m[32m                    v,w=w,v[m
+[32m+[m[32m                else[m
+[32m+[m[32m                    r=thermal_step(b,a,dt,dx,dy;cx=config.cx,cy=config.cy,kappa=config.kappa,bc=config.bc)[m
+[32m+[m[32m                    require(all(isfinite,b),"非有限温度です")[m
+[32m+[m[32m                    for (j,side) in enumerate(SIDES)[m
+[32m+[m[32m                        adv[j,k-1]+=dt*getproperty(r.boundary_rates.advective,Symbol(side))[m
+[32m+[m[32m                        diff[j,k-1]+=dt*getproperty(r.boundary_rates.diffusive,Symbol(side))[m
+[32m+[m[32m                    end[m
+[32m+[m[32m                end[m
+[32m+[m[32m            catch e[m
+[32m+[m[32m                error("$id $(nx)x$(ny) t=$t dt=$dt: $(sprint(showerror,e))")[m
+[32m+[m[32m            end[m
+[32m+[m[32m            push!(step_time,t);push!(step_dt,dt);t=min(target,t+dt);a,b=b,a[m
+[32m+[m[32m        end[m
+[32m+[m[32m        U[:,:,k]=a;isburgers && (V[:,:,k]=v);push!(indices,length(step_dt))[m
+[32m+[m[32m    end[m
+[32m+[m[32m    merge!(c,Dict("x"=>x,"y"=>y,"time"=>time,"step_time"=>step_time,"step_dt"=>step_dt,"save_step_index"=>indices))[m
+[32m+[m[32m    if isburgers;c["u"]=U;c["v"]=V[m
+[32m+[m[32m    else;c["temperature"]=U;c["advective_heat_integral"]=adv;c["diffusive_heat_integral"]=diff;end[m
+[32m+[m[32m    c[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction main(;output_dir=DEFAULT_OUTPUT_DIR,thermal_step=N.thermal_step!,burgers_step=N.burgers_step!,burgers_timestep=N.burgers_stable_timestep,publish_options...)[m
+[32m+[m[32m    run_id=bytes2hex(rand(UInt8,16))[m
+[32m+[m[32m    staged(output_dir,("temperature.h5","burgers.h5");publish_options...) do stage[m
+[32m+[m[32m        for family in ("temperature","burgers")[m
+[32m+[m[32m            cases=Dict(id=>Dict(case_id(n...)=>simulate_case(id,n...;thermal_step,burgers_step,burgers_timestep) for n in grids_for(id)) for id in keys(expected_cases(family)))[m
+[32m+[m[32m            write_fields(joinpath(stage,family*".h5"),cases,source_metadata(run_id,family))[m
+[32m+[m[32m        end[m
+[32m+[m[32m        read_pair(stage)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    println("N07の両HDF5を保存しました。analyze.jl、plot.jlを再実行してください。")[m
+[32m+[m[32mend[m
+[32m+[m[32mabspath(PROGRAM_FILE)==(@__FILE__) && main()[m
+[32m+[m[32mend[m
+[1mdiff --git a/exercises/N07_2d_advection_diffusion/tests.jl b/exercises/N07_2d_advection_diffusion/tests.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..32223b3[m
+[1m--- /dev/null[m
+[1m+++ b/exercises/N07_2d_advection_diffusion/tests.jl[m
+[36m@@ -0,0 +1,115 @@[m
+[32m+[m[32mmodule N07Tests[m
+[32m+[m[32musing Test, ThermofluidExercise[m
+[32m+[m[32mconst N=ThermofluidExercise.N07[m
+[32m+[m[32minclude("provided_support.jl")[m
+[32m+[m[32minclude("analyze.jl")[m
+[32m+[m[32m# 配布済みの必須テスト。自作欄と区別し、入力・期待値を保持する。[m
+[32m+[m[32m@testset "N07 independent faces, half-cell walls and heat" begin[m
+[32m+[m[32m    a=Float64[1 2 4 3;5 7 6 8;9 10 12 11]; saved=copy(a); b=similar(a)[m
+[32m+[m[32m    bc=N.channel_boundaries(:dirichlet); f=N.flux_buffers(a)[m
+[32m+[m[32m    @test N.thermal_stable_timestep(1.,0.,.05,.5,.25,bc)≈.8/5.0[m
+[32m+[m[32m    @test N.thermal_fluxes!(f,a,.5,.25;cx=1.,cy=0.,kappa=.05,bc)===f[m
+[32m+[m[32m    @test f.adv_x==[1 1 1 1;1 2 4 3;5 7 6 8;9 10 12 11][m
+[32m+[m[32m    @test f.diff_x≈[0 -.2 -.6 -.4;-.4 -.5 -.2 -.5;-.4 -.3 -.6 -.3;0 0 0 0][m
+[32m+[m[32m    @test f.adv_y==zeros(3,5)[m
+[32m+[m[32m    @test f.diff_y≈[-.4 -.2 -.4 .2 1.2;-2 -.4 .2 -.4 3.2;-3.6 -.2 -.4 .2 4.4][m
+[32m+[m[32m    r=N.thermal_step!(b,a,.01,.5,.25;cx=1.,cy=0.,kappa=.05,bc)[m
+[32m+[m[32m    @test r.temperature===b[m
+[32m+[m[32m    @test collect(r.boundary_rates.advective)==[1.,-10.5,0.,0.][m
+[32m+[m[32m    @test collect(r.boundary_rates.diffusive)≈[-.3,0.,-3.,-4.4][m
+[32m+[m[32m    # Independent conservative sum using explicitly checked face arrays.[m
+[32m+[m[32m    want=a-.01*((f.adv_x[2:end,:]+f.diff_x[2:end,:]-f.adv_x[1:end-1,:]-f.diff_x[1:end-1,:])/.5+(f.diff_y[:,2:end]-f.diff_y[:,1:end-1])/.25)[m
+[32m+[m[32m    @test b≈want atol=1e-14[m
+[32m+[m[32m    @test .5*.25*sum(b-a)≈.01*(-17.2) atol=1e-14[m
+[32m+[m[32m    @test a==saved[m
+[32m+[m[32m    for wall in (:dirichlet,:insulated)[m
+[32m+[m[32m        bc=N.channel_boundaries(wall); q0=.125sum(a); total=0.; u=copy(a); v=similar(u)[m
+[32m+[m[32m        for _ in 1:20[m
+[32m+[m[32m            r=N.thermal_step!(v,u,.01,.5,.25;cx=1.,cy=0.,kappa=.05,bc)[m
+[32m+[m[32m            rates=r.boundary_rates[m
+[32m+[m[32m            @test .125sum(v-u)≈.01*(sum(rates.advective)+sum(rates.diffusive)) atol=1e-12[m
+[32m+[m[32m            wall==:insulated && @test rates.diffusive.south==rates.diffusive.north==0.[m
+[32m+[m[32m            total+=.01*(sum(rates.advective)+sum(rates.diffusive)); u,v=v,u[m
+[32m+[m[32m        end[m
+[32m+[m[32m        @test .125sum(u)-q0≈total atol=1e-12[m
+[32m+[m[32m    end[m
+[32m+[m[32m    for kind in (:periodic,:insulated,:dirichlet)[m
+[32m+[m[32m        bc=N.boundaries(kind;value=kind==:dirichlet ? 2. : 0.)[m
+[32m+[m[32m        N.thermal_step!(b,fill(2.,3,4),.01,.5,.25;cx=0.,cy=0.,kappa=.05,bc)[m
+[32m+[m[32m        @test b≈fill(2.,3,4)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    bc=N.boundaries(:dirichlet); bound=1/(.05*(3/.5^2+3/.25^2))[m
+[32m+[m[32m    impulse=zeros(3,4); impulse[1,1]=1.[m
+[32m+[m[32m    N.thermal_step!(b,impulse,bound,.5,.25;cx=0.,cy=0.,kappa=.05,bc)[m
+[32m+[m[32m    @test minimum(b)>=-1e-15[m
+[32m+[m[32m    fill!(b,-99.)[m
+[32m+[m[32m    @test_throws ArgumentError N.thermal_step!(b,a,bound*(1+1e-8),.5,.25;cx=0.,cy=0.,kappa=.05,bc)[m
+[32m+[m[32m    @test all(==(-99.),b)[m
+[32m+[m[32m    @test_throws ArgumentError N.thermal_step!(b,a,1/(.1*(1/.5^2+1/.25^2)),.5,.25;cx=0.,cy=0.,kappa=.05,bc)[m
+[32m+[m[32m    # Signed periodic flow at both ends, old-state use and heat cancellation.[m
+[32m+[m[32m    bc=N.boundaries(:periodic)[m
+[32m+[m[32m    for (cx,cy,kappa) in ((-1.,.5,0.),(0.,0.,.05),(0.,0.,0.))[m
+[32m+[m[32m        r=N.thermal_step!(b,a,.01,.5,.25;cx,cy,kappa,bc)[m
+[32m+[m[32m        @test sum(b)≈sum(a) atol=1e-12[m
+[32m+[m[32m        @test sum(r.boundary_rates.advective)+sum(r.boundary_rates.diffusive)≈0. atol=1e-13[m
+[32m+[m[32m        if kappa==0 && cx!=0[m
+[32m+[m[32m            @test b[3,1]≈9-.01*((-1*(1-9))/.5+.5*(9-11)/.25)[m
+[32m+[m[32m        elseif cx==cy==kappa==0[m
+[32m+[m[32m            @test b==a[m
+[32m+[m[32m        end[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N07 two-component signed advective Burgers" begin[m
+[32m+[m[32m    u=[1. -2. 0. .5;-.5 2. -1. 0.;3. -1. .2 -2.][m
+[32m+[m[32m    v=[-.5 1. 2. -1.;2. -1. 0. .5;0. .5 -2. 1.][m
+[32m+[m[32m    originals=(copy(u),copy(v)); un=similar(u); vn=similar(v); dt=.001; dx=.5; dy=.25; nu=.05[m
+[32m+[m[32m    # Independent whole-array oracle uses circular translations, not production neighbor helpers.[m
+[32m+[m[32m    function expected(a)[m
+[32m+[m[32m        left=circshift(a,(1,0)); right=circshift(a,(-1,0)); down=circshift(a,(0,1)); up=circshift(a,(0,-1))[m
+[32m+[m[32m        ux=ifelse.(u.>=0,(a-left)/dx,(right-a)/dx)[m
+[32m+[m[32m        uy=ifelse.(v.>=0,(a-down)/dy,(up-a)/dy)[m
+[32m+[m[32m        a-dt*(u.*ux+v.*uy)+dt*nu*((left-2a+right)/dx^2+(down-2a+up)/dy^2)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    r=N.burgers_step!(un,vn,u,v,dt,dx,dy;nu)[m
+[32m+[m[32m    @test r.u===un && r.v===vn[m
+[32m+[m[32m    @test un≈expected(u) atol=1e-14[m
+[32m+[m[32m    @test vn≈expected(v) atol=1e-14[m
+[32m+[m[32m    @test u==originals[1] && v==originals[2][m
+[32m+[m[32m    @test N.burgers_stable_timestep(u,v,nu,dx,dy)≈.8/(9.0+2.0)[m
+[32m+[m[32m    @test N.burgers_stable_timestep(2u,2v,nu,dx,dy)<N.burgers_stable_timestep(u,v,nu,dx,dy)[m
+[32m+[m[32m    for a in (zeros(3,4),fill(2.,3,4)), b in (zeros(3,4),fill(-1.,3,4))[m
+[32m+[m[32m        N.burgers_step!(un,vn,a,b,.001,dx,dy;nu=0.)[m
+[32m+[m[32m        @test un==a && vn==b[m
+[32m+[m[32m    end[m
+[32m+[m[32m    N.burgers_step!(un,vn,u,zeros(3,4),dt,dx,dy;nu=0.); @test all(iszero,vn)[m
+[32m+[m[32m    arrays=[copy(u) for _ in 1:4][m
+[32m+[m[32m    for i in 1:4,j in i+1:4[m
+[32m+[m[32m        args=copy(arrays); args[j]=args[i][m
+[32m+[m[32m        @test_throws ArgumentError N.burgers_step!(args...,dt,dx,dy;nu)[m
+[32m+[m[32m    end[m
+[32m+[m[32m    fill!(un,-99.); fill!(vn,-88.)[m
+[32m+[m[32m    @test_throws ArgumentError N.burgers_step!(un,vn,u,v,1.,dx,dy;nu)[m
+[32m+[m[32m    @test all(==(-99.),un) && all(==(-88.),vn)[m
+[32m+[m[32m    @test_throws ArgumentError N.burgers_stable_timestep(u,v,-1.,dx,dy)[m
+[32m+[m[32mend[m
+[32m+[m
+[32m+[m[32m@testset "N07 配布済み熱収支解析" begin[m
+[32m+[m[32m    b=N07Analysis.heat_budget([0.,.25,1.],[2.,4.,5.],[3. 4.;-1. -2.;0. 0.;0. 0.],[.5 .2;0. 0.;-.2 -.4;-.3 -.8])[m
+[32m+[m[32m    @test b.net_input≈[2.,1.][m
+[32m+[m[32m    @test b.cumulative_input≈[0.,2.,3.][m
+[32m+[m[32m    @test b.residual≈zeros(3) atol=1e-14[m
+[32m+[m[32m    @test_throws ArgumentError N07Analysis.heat_budget([0.,0.],[1.,1.],zeros(4,1),zeros(4,1))[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N07 自作: 開境界2条件の辺別熱収支" begin[m
+[32m+[m[32m    # TODO(自作): 複数ステップで辺別・移流/拡散別の積算、熱量変化、断熱壁を検証する。[m
+[32m+[m[32m    # 入力と独立期待値、許容値の根拠を記す。公式出力は上書きしない。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N07 自作: 温度とBurgersの解析解収束" begin[m
+[32m+[m[32m    # TODO(自作): 周期温度の拡散・合成と二成分Burgersを3格子で計算し、誤差と両区間の次数を検証する。[m
+[32m+[m[32m    @test false[m
+[32m+[m[32mend[m
+[32m+[m[32m@testset "N07 保存結果と来歴" begin[m
+[32m+[m[32m    @test check_complete()[m
+[32m+[m[32mend[m
+[32m+[m[32mend[m
+* Unmerged path scripts/course.jl
+[1mdiff --git a/src/N06Advection.jl b/src/N06Advection.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..60b58e7[m
+[1m--- /dev/null[m
+[1m+++ b/src/N06Advection.jl[m
+[36m@@ -0,0 +1,33 @@[m
+[32m+[m[32mmodule N06[m
+[32m+[m[32mimport ..ThermofluidExercise as Common[m
+[32m+[m[32mexport stable_timestep, advection_step![m
+[32m+[m[32m# 提供: 入力検証。数値式は下のTODO 2か所で実装する。[m
+[32m+[m[32mfunction positive(v,name)[m
+[32m+[m[32m    v isa Real && isfinite(v) && v>0 || throw(ArgumentError("$name は有限な正値です"))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction speeds(cx,cy)[m
+[32m+[m[32m    all(v->v isa Real && isfinite(v) && v>=0,(cx,cy)) || throw(ArgumentError("cx,cyは有限な非負値です"))[m
+[32m+[m[32mend[m
+[32m+[m[32m"""合成CFL上限。片方向ゼロ可、両方向ゼロ不可。"""[m
+[32m+[m[32mfunction stable_timestep(cx,cy,dx,dy;safety=0.8)[m
+[32m+[m[32m    speeds(cx,cy); positive(dx,"dx"); positive(dy,"dy"); positive(safety,"safety")[m
+[32m+[m[32m    safety<=1 && (cx>0 || cy>0) || throw(ArgumentError("safety<=1、少なくとも一方の速度は正です"))[m
+[32m+[m[32m    # TODO(N06): 方向別寄与を足した安定条件から刻みを求める。[m
+[32m+[m[32m    dt = error("未実装 N06: 合成時間刻み")[m
+[32m+[m[32m    positive(dt,"合成dt（表現範囲）")[m
+[32m+[m[32m    result=Float64(dt); positive(result,"Float64の合成dt")[m
+[32m+[m[32m    return result[m
+[32m+[m[32mend[m
+[32m+[m[32m"""u[i,j]はx[i],y[j]。周期全点を同じ旧行列から更新し、新旧は非alias。"""[m
+[32m+[m[32mfunction advection_step!(u_new,u_old,dt,dx,dy;cx=1.0,cy=0.5)[m
+[32m+[m[32m    u_new isa AbstractMatrix && u_old isa AbstractMatrix || throw(ArgumentError("新旧は行列です"))[m
+[32m+[m[32m    Common.validate_buffers(u_new,u_old)[m
+[32m+[m[32m    speeds(cx,cy); positive(dt,"dt"); positive(dx,"dx"); positive(dy,"dy")[m
+[32m+[m[32m    Cx=cx*(dt/dx); Cy=cy*(dt/dy)[m
+[32m+[m[32m    all(isfinite,(Cx,Cy)) && Cx+Cy<=1+32eps(Float64) || throw(ArgumentError("合成CFL<=1を超えています: Cx=$Cx, Cy=$Cy"))[m
+[32m+[m[32m    nx,ny=size(u_old)[m
+[32m+[m[32m    # TODO(N06): 両方向の周期隣接と流束を使い、全点を旧配列だけから更新する。[m
+[32m+[m[32m    error("未実装 N06: 周期二次元更新")[m
+[32m+[m[32m    return u_new[m
+[32m+[m[32mend[m
+[32m+[m[32mend[m
+[1mdiff --git a/src/N07Transport.jl b/src/N07Transport.jl[m
+[1mnew file mode 100644[m
+[1mindex 0000000..202f5b6[m
+[1m--- /dev/null[m
+[1m+++ b/src/N07Transport.jl[m
+[36m@@ -0,0 +1,117 @@[m
+[32m+[m[32mmodule N07[m
+[32m+[m[32mimport ..ThermofluidExercise as Common[m
+[32m+[m[32mexport thermal_stable_timestep, thermal_fluxes!, thermal_step!, burgers_stable_timestep, burgers_step![m
+[32m+[m[32m# 提供: 形状・境界・書込み前検証。数値処理はTODOで実装する。[m
+[32m+[m[32mrequire(ok,msg)=ok ? nothing : throw(ArgumentError(msg))[m
+[32m+[m[32mfinite(v)=v isa Real && isfinite(v)[m
+[32m+[m[32mpositive(v,name)=require(finite(v) && v>0,"$name は有限正値です")[m
+[32m+[m[32mconst SIDES=(:west,:east,:south,:north)[m
+[32m+[m[32mfunction boundaries(kind::Symbol;value=0.0)[m
+[32m+[m[32m    b=(;kind,value=Float64(value)); bc=(;west=b,east=b,south=b,north=b)[m
+[32m+[m[32m    validate_boundary(bc,0.,0.); bc[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction channel_boundaries(wall::Symbol)[m
+[32m+[m[32m    require(wall in (:dirichlet,:insulated),"上下壁は固定温度または断熱です")[m
+[32m+[m[32m    (;west=(;kind=:inflow,value=1.),east=(;kind=:outflow,value=0.),south=(;kind=wall,value=0.),north=(;kind=wall,value=0.))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_boundary(bc,cx,cy)[m
+[32m+[m[32m    require(bc isa NamedTuple && keys(bc)==SIDES,"bcはwest,east,south,northです")[m
+[32m+[m[32m    for b in values(bc)[m
+[32m+[m[32m        require(b isa NamedTuple && keys(b)==(:kind,:value) && b.kind in (:periodic,:dirichlet,:insulated,:inflow,:outflow) && b.value isa Float64 && isfinite(b.value),"境界の種類または値が不正です")[m
+[32m+[m[32m        require(b.kind in (:dirichlet,:inflow) || b.value==0.,"値が不要な境界はvalue=0.0です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    for (a,b) in ((bc.west,bc.east),(bc.south,bc.north))[m
+[32m+[m[32m        require((a.kind==:periodic)==(b.kind==:periodic),"周期辺は対向辺で指定します")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    kinds=map(b->b.kind,values(bc))[m
+[32m+[m[32m    if :inflow in kinds || :outflow in kinds[m
+[32m+[m[32m        require(kinds[1:2]==(:inflow,:outflow) && all(k->k in (:dirichlet,:insulated),kinds[3:4]) && cx>0 && cy==0,"開境界は左流入・右流出、cx>0,cy=0です")[m
+[32m+[m[32m    elseif !all(==(:periodic),kinds)[m
+[32m+[m[32m        require(all(k->k in (:periodic,:dirichlet,:insulated),kinds) && cx==cy==0,"閉じた非周期系の速度は0です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    nothing[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction thermal_parameters(cx,cy,kappa,dx,dy,bc;safety=1.)[m
+[32m+[m[32m    require(all(finite,(cx,cy,kappa)) && kappa>=0,"速度は有限、kappaは有限非負です")[m
+[32m+[m[32m    positive(dx,"dx"); positive(dy,"dy"); positive(safety,"safety"); require(safety<=1,"safety<=1です")[m
+[32m+[m[32m    validate_boundary(bc,cx,cy)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction matrix(a;old=false)[m
+[32m+[m[32m    require(a isa AbstractMatrix{<:AbstractFloat} && all(>=(3),size(a)),"1始まり・各軸3以上の浮動小数行列です")[m
+[32m+[m[32m    require(axes(a)==map(Base.OneTo,size(a)),"1始まりの配列です")[m
+[32m+[m[32m    old && require(all(isfinite,a),"旧場は有限です")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction independent(arrays)[m
+[32m+[m[32m    for i in eachindex(arrays), j in i+1:length(arrays)[m
+[32m+[m[32m        require(!Base.mightalias(arrays[i],arrays[j]),"配列は互いに非aliasです")[m
+[32m+[m[32m    end[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction thermal_buffers(new,old)[m
+[32m+[m[32m    matrix(new); matrix(old;old=true); require(size(new)==size(old),"新旧の形状が異なります"); independent((new,old))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction flux_buffers(T)[m
+[32m+[m[32m    matrix(T); nx,ny=size(T)[m
+[32m+[m[32m    (;adv_x=zeros(nx+1,ny),diff_x=zeros(nx+1,ny),adv_y=zeros(nx,ny+1),diff_y=zeros(nx,ny+1))[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction validate_fluxes(f,T)[m
+[32m+[m[32m    matrix(T;old=true); nx,ny=size(T)[m
+[32m+[m[32m    require(f isa NamedTuple && keys(f)==(:adv_x,:diff_x,:adv_y,:diff_y),"流束配列名が不正です")[m
+[32m+[m[32m    for (a,shape) in zip(values(f),((nx+1,ny),(nx+1,ny),(nx,ny+1),(nx,ny+1)))[m
+[32m+[m[32m        require(a isa AbstractMatrix{<:AbstractFloat} && size(a)==shape && axes(a)==map(Base.OneTo,shape),"流束配列の形状・軸が不正です")[m
+[32m+[m[32m    end[m
+[32m+[m[32m    independent((T,values(f)...))[m
+[32m+[m[32mend[m
+[32m+[m[32m# 検証用の中心係数。学生はstable_timestepでこの上限の意味を説明して式を実装する。[m
+[32m+[m[32mfunction thermal_rate(cx,cy,kappa,dx,dy,bc)[m
+[32m+[m[32m    ax=any(b->b.kind in (:dirichlet,:inflow),(bc.west,bc.east)) ? 3 : 2[m
+[32m+[m[32m    ay=any(b->b.kind in (:dirichlet,:inflow),(bc.south,bc.north)) ? 3 : 2[m
+[32m+[m[32m    r=abs(cx)/dx+abs(cy)/dy+kappa*(ax/dx^2+ay/dy^2)[m
+[32m+[m[32m    require(isfinite(r),"安定条件が表現範囲外です"); r[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction checked_timestep(dt)[m
+[32m+[m[32m    result=Float64(dt); positive(result,"dt"); result[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction thermal_stable_timestep(cx,cy,kappa,dx,dy,bc;safety=.8)[m
+[32m+[m[32m    thermal_parameters(cx,cy,kappa,dx,dy,bc;safety)[m
+[32m+[m[32m    require(thermal_rate(cx,cy,kappa,dx,dy,bc)>0,"全係数0では刻みを決められません")[m
+[32m+[m[32m    # TODO(N07): 半セル境界を含む合成上限。[m
+[32m+[m[32m    dt=error("未実装 N07: 温度の安定刻み")[m
+[32m+[m[32m    checked_timestep(dt)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction thermal_fluxes!(fluxes,T,dx,dy;cx,cy,kappa,bc)[m
+[32m+[m[32m    thermal_parameters(cx,cy,kappa,dx,dy,bc); validate_fluxes(fluxes,T)[m
+[32m+[m[32m    # TODO(N07): 正x・正y方向、移流と拡散を分けて全ての面へ書く。[m
+[32m+[m[32m    error("未実装 N07: 温度の面流束")[m
+[32m+[m[32m    fluxes[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction thermal_step!(Tnew,Told,dt,dx,dy;cx,cy,kappa,bc)[m
+[32m+[m[32m    thermal_parameters(cx,cy,kappa,dx,dy,bc); thermal_buffers(Tnew,Told); positive(dt,"dt")[m
+[32m+[m[32m    rate=thermal_rate(cx,cy,kappa,dx,dy,bc)[m
+[32m+[m[32m    require(dt*rate<=1+32eps(Float64),"温度の安定上限を超えています")[m
+[32m+[m[32m    # TODO(N07): Common.validate_buffersも再利用し、同じ旧場の面流束を一度構築して更新と辺別レートに使う。[m
+[32m+[m[32m    error("未実装 N07: 温度更新と境界熱流束")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction burgers_parameters(u,v,nu,dx,dy;safety=1.)[m
+[32m+[m[32m    matrix(u;old=true); matrix(v;old=true); require(size(u)==size(v),"二成分の形状が異なります"); independent((u,v))[m
+[32m+[m[32m    require(finite(nu) && nu>=0,"nuは有限非負です"); positive(dx,"dx"); positive(dy,"dy"); positive(safety,"safety"); require(safety<=1,"safety<=1です")[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction burgers_rate(u,v,nu,dx,dy)[m
+[32m+[m[32m    r=maximum(abs(u[k])/dx+abs(v[k])/dy for k in eachindex(u,v))+2nu*(1/dx^2+1/dy^2)[m
+[32m+[m[32m    require(isfinite(r),"安定条件が表現範囲外です"); r[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction burgers_stable_timestep(u,v,nu,dx,dy;safety=.8)[m
+[32m+[m[32m    burgers_parameters(u,v,nu,dx,dy;safety)[m
+[32m+[m[32m    require(burgers_rate(u,v,nu,dx,dy)>0,"全速度・粘性0では刻みを決められません")[m
+[32m+[m[32m    # TODO(N07): このステップの旧場の局所速度から合成刻みを決める。[m
+[32m+[m[32m    dt=error("未実装 N07: Burgersの動的刻み")[m
+[32m+[m[32m    checked_timestep(dt)[m
+[32m+[m[32mend[m
+[32m+[m[32mfunction burgers_step!(unew,vnew,uold,vold,dt,dx,dy;nu)[m
+[32m+[m[32m    burgers_parameters(uold,vold,nu,dx,dy); thermal_buffers(unew,uold); thermal_buffers(vnew,vold)[m
+[32m+[m[32m    independent((unew,vnew,uold,vold)); positive(dt,"dt")[m
+[32m+[m[32m    require(dt*burgers_rate(uold,vold,nu,dx,dy)<=1+32eps(Float64),"Burgersの安定上限を超えています")[m
+[32m+[m[32m    # TODO(N07): Common.validate_buffersと周期添字を再利用し、正負風上と拡散で二成分を同じ旧場から更新。[m
+[32m+[m[32m    error("未実装 N07: 二成分Burgers更新")[m
+[32m+[m[32m    (;u=unew,v=vnew)[m
+[32m+[m[32mend[m
+[32m+[m[32mend[m
+* Unmerged path src/ThermofluidExercise.jl
+* Unmerged path test/f00_preflight_test.jl
