@@ -24,5 +24,9 @@ end
     # TODO(自作): 戻り値の型、別の数学的性質、または必須とは異なる不正入力から一つ選び、入力と期待値を自分で書く。
     # 整数入力でも平均や偏差は小数になり得る。入力と同じ型かではなく、計算結果を格納できるかを考える。
     # Float32を使う場合は、値の一致とtypeof／eltypeによる型の確認を区別する。
-    @test false
+    # TODO(自作): Float32配列を渡した際、戻り値の要素型(eltype)がFloat32であることを確認する
+    values_f32 = Float32[5.0, 7.0, 12.0]
+    anomalies_f32 = F02JuliaArraysAndTests.temperature_anomaly(values_f32)
+    @test eltype(anomalies_f32) == Float32
+    @test anomalies_f32 ≈ Float32[-3.0, -1.0, 4.0]
 end
